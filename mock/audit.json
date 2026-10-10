@@ -1,0 +1,203 @@
+{
+  "audit_id": "a_mock",
+  "status": "done",
+  "created_at": "2026-10-10T10:00:00Z",
+  "answer_text": "Refund requests can be submitted within 60 days of purchase. Approved refunds are returned to the original payment method within 5 to 7 business days. Digital products can still be refunded after they have been downloaded. Annual subscriptions can be cancelled at any time. Customers also receive a free replacement for any defective product.",
+  "source_ids": [
+    "s1"
+  ],
+  "claims": [
+    {
+      "claim_id": "c1",
+      "text": "Refund requests can be submitted within 60 days of purchase.",
+      "answer_span": {
+        "start": 0,
+        "end": 60
+      },
+      "status": "done",
+      "verdict": "contradicted",
+      "error_type": "wrong_number",
+      "flags": [],
+      "confidence": 0.93,
+      "confidence_label": "high",
+      "explanation": "The policy sets a 30-day window, not 60 days.",
+      "evidence": [
+        {
+          "source_id": "s1",
+          "source_name": "refund_policy.pdf",
+          "page": 1,
+          "quote": "Refund requests must be submitted within 30 days of purchase.",
+          "start": 15,
+          "end": 76,
+          "quote_verified": true
+        }
+      ],
+      "signals": {
+        "quote_verified": true,
+        "retrieval_score": 0.84,
+        "agreement": "3/3",
+        "jev": null,
+        "hhem": null
+      }
+    },
+    {
+      "claim_id": "c2",
+      "text": "Approved refunds are returned to the original payment method within 5 to 7 business days.",
+      "answer_span": {
+        "start": 61,
+        "end": 150
+      },
+      "status": "done",
+      "verdict": "supported",
+      "error_type": null,
+      "flags": [],
+      "confidence": 0.95,
+      "confidence_label": "high",
+      "explanation": "The policy states the same payment method and timeframe.",
+      "evidence": [
+        {
+          "source_id": "s1",
+          "source_name": "refund_policy.pdf",
+          "page": 1,
+          "quote": "Approved refunds are returned to the original payment method within 5 to 7 business days.",
+          "start": 77,
+          "end": 166,
+          "quote_verified": true
+        }
+      ],
+      "signals": {
+        "quote_verified": true,
+        "retrieval_score": 0.91,
+        "agreement": "3/3",
+        "jev": null,
+        "hhem": null
+      }
+    },
+    {
+      "claim_id": "c3",
+      "text": "Digital products can still be refunded after they have been downloaded.",
+      "answer_span": {
+        "start": 151,
+        "end": 222
+      },
+      "status": "done",
+      "verdict": "contradicted",
+      "error_type": "contradiction",
+      "flags": [],
+      "confidence": 0.92,
+      "confidence_label": "high",
+      "explanation": "The policy says downloaded digital products are non-refundable.",
+      "evidence": [
+        {
+          "source_id": "s1",
+          "source_name": "refund_policy.pdf",
+          "page": 2,
+          "quote": "Digital products are non-refundable once they have been downloaded.",
+          "start": 0,
+          "end": 67,
+          "quote_verified": true
+        }
+      ],
+      "signals": {
+        "quote_verified": true,
+        "retrieval_score": 0.88,
+        "agreement": "3/3",
+        "jev": null,
+        "hhem": null
+      }
+    },
+    {
+      "claim_id": "c4",
+      "text": "Annual subscriptions can be cancelled at any time.",
+      "answer_span": {
+        "start": 223,
+        "end": 273
+      },
+      "status": "done",
+      "verdict": "supported",
+      "error_type": null,
+      "flags": [],
+      "confidence": 0.8,
+      "confidence_label": "medium",
+      "explanation": "The policy allows cancellation at any time (it adds that no partial refund is given for the unused period).",
+      "evidence": [
+        {
+          "source_id": "s1",
+          "source_name": "refund_policy.pdf",
+          "page": 2,
+          "quote": "Annual subscriptions may be cancelled at any time",
+          "start": 68,
+          "end": 117,
+          "quote_verified": true
+        }
+      ],
+      "signals": {
+        "quote_verified": true,
+        "retrieval_score": 0.79,
+        "agreement": "2/3",
+        "jev": null,
+        "hhem": null
+      }
+    },
+    {
+      "claim_id": "c5",
+      "text": "Customers also receive a free replacement for any defective product.",
+      "answer_span": {
+        "start": 274,
+        "end": 342
+      },
+      "status": "done",
+      "verdict": "unsupported",
+      "error_type": "unsupported_addition",
+      "flags": [],
+      "confidence": 0.72,
+      "confidence_label": "medium",
+      "explanation": "Nothing in the provided policy mentions free replacements for defective products. Not stated is not the same as false: this cannot be verified from these sources.",
+      "evidence": [],
+      "signals": {
+        "quote_verified": null,
+        "retrieval_score": 0.31,
+        "agreement": "2/3",
+        "jev": null,
+        "hhem": null
+      }
+    }
+  ],
+  "answer_findings": [],
+  "summary": {
+    "label": "contains_errors",
+    "counts": {
+      "supported": 2,
+      "contradicted": 2,
+      "unsupported": 1,
+      "ambiguous": 0
+    },
+    "supported_ratio": 0.4
+  },
+  "trace": {
+    "model": "gemini",
+    "total_ms": 8442,
+    "stages": [
+      {
+        "name": "extract_claims",
+        "ms": 820
+      },
+      {
+        "name": "retrieve",
+        "ms": 310
+      },
+      {
+        "name": "verdicts",
+        "ms": 5400
+      },
+      {
+        "name": "validate",
+        "ms": 12
+      },
+      {
+        "name": "answer_checks",
+        "ms": 1900
+      }
+    ]
+  }
+}
