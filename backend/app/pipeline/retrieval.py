@@ -21,6 +21,7 @@ from rank_bm25 import BM25Okapi
 
 from app.models import Source
 from app.pipeline.sources import chunk_source
+from app.store import store
 
 log = logging.getLogger(__name__)
 
@@ -97,18 +98,53 @@ class RetrievalIndex:
 
     @classmethod
     async def build(cls, sources: List[Source], client, embedding_model: str) -> "RetrievalIndex":
-        """Chunk all sources, embed once, build BM25 index."""
+        """Reuse account-owned document chunks/vectors when available."""
         all_chunks: List[Dict[str, Any]] = []
+        cached_vectors: List[List[float]] = []
+        all_cached = bool(sources)
         for src in sources:
-            for chunk in chunk_source(src.pages):
+            cached = store.get_cached_source_chunks(src.source_id, embedding_model)
+            if not cached:
+                all_cached = False
+                break
+            for chunk in cached:
+                cached_vectors.append(chunk.pop("embedding"))
                 chunk["source_id"] = src.source_id
                 chunk["source_name"] = src.name
                 all_chunks.append(chunk)
 
-        texts = [c["text"] for c in all_chunks]
-        embeddings = await embed_texts(texts, client, embedding_model, task_type="RETRIEVAL_DOCUMENT")
+        embeddings: Optional[np.ndarray] = None
+        if all_cached:
+            try:
+                embeddings = np.asarray(cached_vectors, dtype=np.float32)
+                if embeddings.ndim != 2 or embeddings.shape[0] != len(all_chunks):
+                    raise ValueError("cached embedding shape mismatch")
+                log.info("retrieval_embeddings_reused sources=%d chunks=%d", len(sources), len(all_chunks))
+            except (TypeError, ValueError):
+                all_cached = False
+
+        if not all_cached:
+            all_chunks = []
+            by_source: Dict[str, List[Dict[str, Any]]] = {}
+            for src in sources:
+                source_chunks = chunk_source(src.pages)
+                for chunk in source_chunks:
+                    chunk["source_id"] = src.source_id
+                    chunk["source_name"] = src.name
+                    all_chunks.append(chunk)
+                by_source[src.source_id] = source_chunks
+            texts = [c["text"] for c in all_chunks]
+            embeddings = await embed_texts(texts, client, embedding_model, task_type="RETRIEVAL_DOCUMENT")
+            if embeddings is not None:
+                offset = 0
+                for src in sources:
+                    chunks = by_source[src.source_id]
+                    vectors = embeddings[offset:offset + len(chunks)].tolist()
+                    store.save_source_chunks(src.source_id, chunks, vectors, embedding_model)
+                    offset += len(chunks)
 
         # BM25 expects tokenised input
+        texts = [chunk["text"] for chunk in all_chunks]
         tokenised = [t.lower().split() for t in texts]
         bm25 = BM25Okapi(tokenised) if tokenised else BM25Okapi([[]])
 

@@ -5,15 +5,16 @@ import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, Bookmark, Clock3, FileText, Home, MessageSquareText, Settings, Sparkles } from "lucide-react";
+import { Activity, Bookmark, Clock3, FileText, Home, LogOut, MessageSquareText, Settings, Sparkles } from "lucide-react";
+import { getSupabase } from "@/lib/supabase";
 
 const navigation = [
   { href: "/", label: "Home", description: "Start a new source-grounded review.", icon: Home },
-  { href: "/audit/current", label: "Audits", description: "Open an audit review.", icon: MessageSquareText },
+  { href: "/audit/northstar-demo", label: "Audits", description: "Open the sample claim review.", icon: MessageSquareText },
   { href: "/history", label: "History", description: "Browse recent audit sessions.", icon: Clock3 },
-  { href: "/sources", label: "Sources", description: "Browse source documents.", icon: FileText },
-  { href: "/saved", label: "Saved", description: "Review saved findings.", icon: Bookmark, divider: true },
-  { href: "/activity", label: "Activity", description: "See audit activity.", icon: Activity },
+  { href: "/sources", label: "Sources", description: "Browse the documents used in the sample workspace.", icon: FileText },
+  { href: "/saved", label: "Saved", description: "Review saved sample findings.", icon: Bookmark, divider: true },
+  { href: "/activity", label: "Activity", description: "See the sample review timeline.", icon: Activity },
 ];
 
 export function RailHint({ id, label, description, open, onOpen, onClose, children, className = "", cardWidth = 224 }: { id: string; label: string; description: string; open: boolean; onOpen: (id: string) => void; onClose: (id: string) => void; children: ReactNode; className?: string; cardWidth?: number }) {
@@ -66,7 +67,7 @@ function activeRoute(pathname: string, href: string) {
 }
 
 type NativeViewTransition = { finished: Promise<void>; skipTransition: () => void };
-type ViewTransitionScope = HTMLElement & { startViewTransition?: (update: () => Promise<void>) => NativeViewTransition };
+type ViewTransitionDocument = Document & { startViewTransition?: (update: () => Promise<void>) => NativeViewTransition };
 type PendingRouteTransition = {
   target: string;
   timer: number;
@@ -78,51 +79,39 @@ export function WorkspaceRail() {
   const pathname = usePathname();
   const router = useRouter();
   const navRef = useRef<HTMLElement>(null);
-  const markerRef = useRef<HTMLSpanElement>(null);
   const flipRef = useRef<PendingRouteTransition | null>(null);
+  const [marker, setMarker] = useState({ x: 0, y: 0, ready: false });
   const [activeHint, setActiveHint] = useState<string | null>(null);
   const selectedHref = pathname === "/settings" ? "/settings" : navigation.find((item) => activeRoute(pathname, item.href))?.href;
   const updateMarker = useCallback((target?: HTMLElement | null) => {
     const nav = navRef.current;
     const active = target ?? nav?.querySelector<HTMLElement>(".rail-button.active");
-    const marker = markerRef.current;
-    if (!nav || !marker) return;
-    if (!active) {
-      marker.style.opacity = "0";
-      return;
-    }
+    if (!nav || !active) return;
     const navRect = nav.getBoundingClientRect();
     const buttonRect = active.getBoundingClientRect();
     const mobile = window.matchMedia("(max-width: 760px)").matches;
-    const x = mobile ? buttonRect.left - navRect.left + (buttonRect.width - 28) / 2 : buttonRect.left - navRect.left;
-    const y = mobile ? 0 : buttonRect.top - navRect.top;
-    marker.style.setProperty("--indicator-x", `${x}px`);
-    marker.style.setProperty("--indicator-y", `${y}px`);
-    marker.style.setProperty("--indicator-width", `${mobile ? 28 : buttonRect.width}px`);
-    marker.style.setProperty("--indicator-height", `${mobile ? 2 : buttonRect.height}px`);
-    marker.style.opacity = "1";
+    setMarker({
+      x: mobile ? buttonRect.left - navRect.left + (buttonRect.width - 28) / 2 : 0,
+      y: mobile ? 0 : buttonRect.top - navRect.top + (buttonRect.height - 29) / 2,
+      ready: true,
+    });
   }, []);
 
-  const moveMarkerTo = useCallback((href: string) => {
+  const navigateTo = useCallback((href: string) => {
+    if (href === pathname) return;
     const destinationItem = navigation.find((item) => activeRoute(href, item.href));
     const destinationLink = destinationItem
       ? Array.from(navRef.current?.querySelectorAll<HTMLAnchorElement>(".rail-button") ?? []).find((link) => link.getAttribute("href") === destinationItem.href)
       : null;
-    if (destinationLink) updateMarker(destinationLink);
-  }, [updateMarker]);
-
-  const navigateTo = useCallback((href: string) => {
-    if (href === pathname) return;
     // Move the single rail marker as soon as the destination is chosen; the rail itself stays fixed.
-    moveMarkerTo(href);
+    if (destinationLink) updateMarker(destinationLink);
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       router.push(href);
       return;
     }
     const liveMain = document.querySelector<HTMLElement>(".workspace-main");
-    const transitionScope = liveMain as ViewTransitionScope | null;
-    const startScopedTransition = transitionScope?.startViewTransition;
-    if (!transitionScope || !startScopedTransition) {
+    const transitionDocument = document as ViewTransitionDocument;
+    if (!liveMain || !transitionDocument.startViewTransition) {
       router.push(href);
       return;
     }
@@ -145,9 +134,7 @@ export function WorkspaceRail() {
     flipRef.current = pending;
 
     try {
-      // Scope the snapshot to the changing page. A document-scoped transition
-      // overlays the entire viewport, covering rail ripples until the flip ends.
-      const transition = startScopedTransition.call(transitionScope, async () => {
+      const transition = transitionDocument.startViewTransition(async () => {
         if (flipRef.current !== pending) return;
         router.push(href);
         await updateComplete;
@@ -155,10 +142,10 @@ export function WorkspaceRail() {
       pending.transition = transition;
       pending.timer = window.setTimeout(() => {
         if (flipRef.current !== pending) return;
-        // Release the snapshot promptly if a route compile or render is slow.
+        // Keep a slow dev compile from trapping the old screen in a transition.
         transition.skipTransition();
         pending.resolveUpdate();
-      }, 900);
+      }, 7000);
       const cleanup = () => {
         window.clearTimeout(pending.timer);
         if (flipRef.current === pending) {
@@ -173,7 +160,7 @@ export function WorkspaceRail() {
       flipRef.current = null;
       router.push(href);
     }
-  }, [pathname, router, moveMarkerTo]);
+  }, [pathname, router, updateMarker]);
 
   const navigateWithFlip = useCallback((event: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || href === pathname) return;
@@ -212,12 +199,13 @@ export function WorkspaceRail() {
   return <aside className="rail">
     <div className="rail-top"><div className="brand-mark" aria-hidden="true"><Sparkles size={21} strokeWidth={1.8}/></div></div>
     <nav ref={navRef} className="rail-nav" aria-label="Main navigation">
-      <span ref={markerRef} aria-hidden="true" className="rail-active-indicator"/>
-      {navigation.map(({ href, label, description, icon: Icon, divider }) => <RailHint key={href} id={href} label={label} description={description} open={activeHint === href} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href={href} prefetch aria-label={label} aria-describedby={activeHint === href ? `rail-hint-${href}` : undefined} onPointerDown={(event) => { if (event.button === 0) moveMarkerTo(href); }} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, href); }} className={`rail-button ${selectedHref === href ? "active" : ""} ${divider ? "rail-divider" : ""}`}><Icon size={19} strokeWidth={1.8}/></Link></RailHint>)}
+      <span aria-hidden="true" className="rail-active-indicator" style={{ "--indicator-x": `${marker.x}px`, "--indicator-y": `${marker.y}px`, opacity: marker.ready ? 1 : 0 } as CSSProperties}/>
+      {navigation.map(({ href, label, description, icon: Icon, divider }) => <RailHint key={href} id={href} label={label} description={description} open={activeHint === href} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href={href} prefetch aria-label={label} aria-describedby={activeHint === href ? `rail-hint-${href}` : undefined} onPointerEnter={() => router.prefetch(href)} onFocus={() => router.prefetch(href)} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, href); }} className={`rail-button ${selectedHref === href ? "active" : ""} ${divider ? "rail-divider" : ""}`}><Icon size={19} strokeWidth={1.8}/></Link></RailHint>)}
     </nav>
     <div className="rail-bottom">
-      <RailHint id="/settings" label="Settings" description="Manage the preview settings page." open={activeHint === "/settings"} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href="/settings" prefetch aria-label="Settings" aria-describedby={activeHint === "/settings" ? "rail-hint-/settings" : undefined} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, "/settings"); }} className={`rail-button ${pathname === "/settings" ? "active" : ""}`}><Settings size={19}/></Link></RailHint>
-      <RailHint id="/account" label="Account" description="View the account and workspace preview." open={activeHint === "/account"} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href="/account" prefetch aria-label="Account" aria-describedby={activeHint === "/account" ? "rail-hint-/account" : undefined} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, "/account"); }} className={`avatar ${pathname === "/account" ? "active" : ""}`}>S<span/></Link></RailHint>
+      {getSupabase() && <button type="button" className="rail-button" aria-label="Sign out" title="Sign out" onClick={() => void getSupabase()?.auth.signOut()}><LogOut size={18}/></button>}
+      <RailHint id="/settings" label="Settings" description="Manage the preview settings page." open={activeHint === "/settings"} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href="/settings" prefetch aria-label="Settings" aria-describedby={activeHint === "/settings" ? "rail-hint-/settings" : undefined} onPointerEnter={() => router.prefetch("/settings")} onFocus={() => router.prefetch("/settings")} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, "/settings"); }} className={`rail-button ${pathname === "/settings" ? "active" : ""}`}><Settings size={19}/></Link></RailHint>
+      <RailHint id="/account" label="Account" description="View the account and workspace preview." open={activeHint === "/account"} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href="/account" prefetch aria-label="Account" aria-describedby={activeHint === "/account" ? "rail-hint-/account" : undefined} onPointerEnter={() => router.prefetch("/account")} onFocus={() => router.prefetch("/account")} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, "/account"); }} className={`avatar ${pathname === "/account" ? "active" : ""}`}>S<span/></Link></RailHint>
     </div>
   </aside>;
 }
