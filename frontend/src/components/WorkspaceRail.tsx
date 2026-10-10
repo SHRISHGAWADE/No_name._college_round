@@ -5,15 +5,10 @@ import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, Bookmark, Clock3, FileText, Home, MessageSquareText, Settings, Sparkles } from "lucide-react";
+import { Home, MessageSquareText, Sparkles } from "lucide-react";
 
 const navigation = [
   { href: "/", label: "Home", description: "Start a new source-grounded review.", icon: Home },
-  { href: "/audit/northstar-demo", label: "Audits", description: "Open the sample claim review.", icon: MessageSquareText },
-  { href: "/history", label: "History", description: "Browse recent audit sessions.", icon: Clock3 },
-  { href: "/sources", label: "Sources", description: "Browse the documents used in the sample workspace.", icon: FileText },
-  { href: "/saved", label: "Saved", description: "Review saved sample findings.", icon: Bookmark, divider: true },
-  { href: "/activity", label: "Activity", description: "See the sample review timeline.", icon: Activity },
 ];
 
 export function RailHint({ id, label, description, open, onOpen, onClose, children, className = "", cardWidth = 224 }: { id: string; label: string; description: string; open: boolean; onOpen: (id: string) => void; onClose: (id: string) => void; children: ReactNode; className?: string; cardWidth?: number }) {
@@ -81,7 +76,16 @@ export function WorkspaceRail() {
   const flipRef = useRef<PendingRouteTransition | null>(null);
   const [marker, setMarker] = useState({ x: 0, y: 0, ready: false });
   const [activeHint, setActiveHint] = useState<string | null>(null);
-  const selectedHref = pathname === "/settings" ? "/settings" : navigation.find((item) => activeRoute(pathname, item.href))?.href;
+  const [latestAudit, setLatestAudit] = useState("");
+  useEffect(() => {
+    const update = () => { try { setLatestAudit(sessionStorage.getItem("second-opinion-current-audit") ?? ""); } catch { setLatestAudit(""); } };
+    update();
+    window.addEventListener("second-opinion:audit", update);
+    window.addEventListener("storage", update);
+    return () => { window.removeEventListener("second-opinion:audit", update); window.removeEventListener("storage", update); };
+  }, []);
+  const items = latestAudit ? [...navigation, { href: `/audit/${encodeURIComponent(latestAudit)}`, label: "Current audit", description: "Return to the latest audit review.", icon: MessageSquareText }] : navigation;
+  const selectedHref = items.find((item) => activeRoute(pathname, item.href))?.href;
   const updateMarker = useCallback((target?: HTMLElement | null) => {
     const nav = navRef.current;
     const active = target ?? nav?.querySelector<HTMLElement>(".rail-button.active");
@@ -98,7 +102,7 @@ export function WorkspaceRail() {
 
   const navigateTo = useCallback((href: string) => {
     if (href === pathname) return;
-    const destinationItem = navigation.find((item) => activeRoute(href, item.href));
+    const destinationItem = items.find((item) => activeRoute(href, item.href));
     const destinationLink = destinationItem
       ? Array.from(navRef.current?.querySelectorAll<HTMLAnchorElement>(".rail-button") ?? []).find((link) => link.getAttribute("href") === destinationItem.href)
       : null;
@@ -159,7 +163,7 @@ export function WorkspaceRail() {
       flipRef.current = null;
       router.push(href);
     }
-  }, [pathname, router, updateMarker]);
+  }, [items, pathname, router, updateMarker]);
 
   const navigateWithFlip = useCallback((event: MouseEvent<HTMLAnchorElement>, href: string) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || href === pathname) return;
@@ -199,11 +203,8 @@ export function WorkspaceRail() {
     <div className="rail-top"><div className="brand-mark" aria-hidden="true"><Sparkles size={21} strokeWidth={1.8}/></div></div>
     <nav ref={navRef} className="rail-nav" aria-label="Main navigation">
       <span aria-hidden="true" className="rail-active-indicator" style={{ "--indicator-x": `${marker.x}px`, "--indicator-y": `${marker.y}px`, opacity: marker.ready ? 1 : 0 } as CSSProperties}/>
-      {navigation.map(({ href, label, description, icon: Icon, divider }) => <RailHint key={href} id={href} label={label} description={description} open={activeHint === href} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href={href} prefetch aria-label={label} aria-describedby={activeHint === href ? `rail-hint-${href}` : undefined} onPointerEnter={() => router.prefetch(href)} onFocus={() => router.prefetch(href)} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, href); }} className={`rail-button ${selectedHref === href ? "active" : ""} ${divider ? "rail-divider" : ""}`}><Icon size={19} strokeWidth={1.8}/></Link></RailHint>)}
+      {items.map(({ href, label, description, icon: Icon }) => <RailHint key={href} id={href} label={label} description={description} open={activeHint === href} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href={href} prefetch aria-label={label} aria-describedby={activeHint === href ? `rail-hint-${href}` : undefined} onPointerEnter={() => router.prefetch(href)} onFocus={() => router.prefetch(href)} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, href); }} className={`rail-button ${selectedHref === href ? "active" : ""}`}><Icon size={19} strokeWidth={1.8}/></Link></RailHint>)}
     </nav>
-    <div className="rail-bottom">
-      <RailHint id="/settings" label="Settings" description="Manage the preview settings page." open={activeHint === "/settings"} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href="/settings" prefetch aria-label="Settings" aria-describedby={activeHint === "/settings" ? "rail-hint-/settings" : undefined} onPointerEnter={() => router.prefetch("/settings")} onFocus={() => router.prefetch("/settings")} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, "/settings"); }} className={`rail-button ${pathname === "/settings" ? "active" : ""}`}><Settings size={19}/></Link></RailHint>
-      <RailHint id="/account" label="Account" description="View the account and workspace preview." open={activeHint === "/account"} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href="/account" prefetch aria-label="Account" aria-describedby={activeHint === "/account" ? "rail-hint-/account" : undefined} onPointerEnter={() => router.prefetch("/account")} onFocus={() => router.prefetch("/account")} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, "/account"); }} className={`avatar ${pathname === "/account" ? "active" : ""}`}>S<span/></Link></RailHint>
-    </div>
+    <div className="rail-bottom" />
   </aside>;
 }
