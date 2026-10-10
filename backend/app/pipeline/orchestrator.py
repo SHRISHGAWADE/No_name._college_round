@@ -30,7 +30,24 @@ from app.pipeline.verdict import evaluate_claim
 from app.features.answer_checks import run_answer_checks
 from app.store import store
 
+import re
+
 log = logging.getLogger(__name__)
+
+
+def format_safe_error(exc: Exception) -> str:
+    """Format an exception into a short, safe string without secrets or doc text."""
+    exc_type = type(exc).__name__
+    raw_msg = str(exc)
+    safe_msg = raw_msg
+    if config.GEMINI_API_KEY:
+        safe_msg = safe_msg.replace(config.GEMINI_API_KEY, "[REDACTED]")
+    safe_msg = re.sub(r"AIza[0-9A-Za-z-_]{35}", "[REDACTED]", safe_msg)
+    safe_msg = re.sub(r"key=[^\s&]+", "key=[REDACTED]", safe_msg)
+    safe_msg = re.sub(r"[\r\n]+", " ", safe_msg).strip()
+    if len(safe_msg) > 250:
+        safe_msg = safe_msg[:247] + "..."
+    return f"{exc_type}: {safe_msg}" if safe_msg else exc_type
 
 
 def _make_client() -> genai.Client:
@@ -41,116 +58,120 @@ async def run_audit(audit_id: str, answer_text: str, source_ids: List[str]) -> N
     """Background task: full pipeline, updates store and streams events."""
     t_total_start = time.monotonic()
     stage_times: List[TraceStage] = []
-    client = _make_client()
 
-    sources: List[Source] = store.get_sources(source_ids)
-    sources_by_id: Dict[str, Source] = {s.source_id: s for s in sources}
-
-    # ── 1. Claim extraction ───────────────────────────────────────────────
-    t0 = time.monotonic()
     try:
+        client = _make_client()
+
+        sources: List[Source] = store.get_sources(source_ids)
+        sources_by_id: Dict[str, Source] = {s.source_id: s for s in sources}
+
+        # ── 1. Claim extraction ───────────────────────────────────────────────
+        t0 = time.monotonic()
         claims = await extract_claims(answer_text, client, config.GENERATION_MODEL)
-    except ClaimExtractionError as exc:
-        log.error("claim extraction crashed: %s", exc)
-        await _mark_error(audit_id, "claim_extraction_failed", "Claim extraction could not be completed.")
-        return
-    except Exception as exc:
-        log.error("claim extraction crashed: %s", exc)
-        await _mark_error(audit_id, "claim_extraction_failed", "Claim extraction could not be completed.")
-        return
-    stage_times.append(TraceStage(name="extract_claims", ms=int((time.monotonic() - t0) * 1000)))
+        stage_times.append(TraceStage(name="extract_claims", ms=int((time.monotonic() - t0) * 1000)))
 
-    if not claims:
-        # A valid empty JSON list is distinct from malformed model output.
-        # It is a completed audit with no factual claims, not an error event.
-        log.info("no factual claims extracted for audit %s", audit_id)
-        _finish(audit_id, [], [], stage_times, t_total_start, answer_text, source_ids)
-        return
+        if not claims:
+            # A valid empty JSON list is distinct from malformed model output.
+            # It is a completed audit with no factual claims, not an error event.
+            log.info("no factual claims extracted for audit %s", audit_id)
+            _finish(audit_id, [], [], stage_times, t_total_start, answer_text, source_ids)
+            return
 
-    # Emit pending claims (streaming)
-    await store.push_event(audit_id, "claims", {"claims": [c.model_dump() for c in claims]})
+        # Emit pending claims (streaming)
+        await store.push_event(audit_id, "claims", {"claims": [c.model_dump() for c in claims]})
 
-    # Update store with pending claims
-    result = store.get_audit(audit_id)
-    if result:
-        result.claims = claims
-        store.set_audit(audit_id, result)
+        # Update store with pending claims
+        result = store.get_audit(audit_id)
+        if result:
+            result.claims = claims
+            store.set_audit(audit_id, result)
 
-    # ── 2. Build retrieval index (embed all sources once) ─────────────────
-    t0 = time.monotonic()
-    try:
-        index = await RetrievalIndex.build(sources, client, config.EMBEDDING_MODEL)
-    except Exception as exc:
-        log.error("retrieval index build failed: %s", exc)
-        index = None
-    stage_times.append(TraceStage(name="retrieve", ms=int((time.monotonic() - t0) * 1000)))
+        # ── 2. Build retrieval index (embed all sources once) ─────────────────
+        t0 = time.monotonic()
+        try:
+            index = await RetrievalIndex.build(sources, client, config.EMBEDDING_MODEL)
+        except Exception as exc:
+            log.error("retrieval index build failed: %s", exc)
+            index = None
+        stage_times.append(TraceStage(name="retrieve", ms=int((time.monotonic() - t0) * 1000)))
 
-    # ── 3. Parallel verdict evaluation ────────────────────────────────────
-    t0 = time.monotonic()
-    sem = asyncio.Semaphore(config.RETRIEVE_SEMAPHORE)
+        # ── 3. Parallel verdict evaluation ────────────────────────────────────
+        t0 = time.monotonic()
+        sem = asyncio.Semaphore(config.RETRIEVE_SEMAPHORE)
 
-    async def process_claim(claim: Claim) -> Claim:
-        async with sem:
-            try:
-                if index is not None:
-                    chunks, ret_score = await asyncio.wait_for(
-                        index.retrieve(claim.text, client, config.EMBEDDING_MODEL, top_k=config.RETRIEVAL_TOP_K),
+        async def process_claim(claim: Claim) -> Claim:
+            async with sem:
+                try:
+                    if index is not None:
+                        chunks, ret_score = await asyncio.wait_for(
+                            index.retrieve(claim.text, client, config.EMBEDDING_MODEL, top_k=config.RETRIEVAL_TOP_K),
+                            timeout=config.VERDICT_TIMEOUT_S,
+                        )
+                    else:
+                        chunks, ret_score = [], 0.0
+
+                    done_claim = await asyncio.wait_for(
+                        evaluate_claim(
+                            claim=claim,
+                            chunks=chunks,
+                            sources_by_id=sources_by_id,
+                            retrieval_score=ret_score,
+                            client=client,
+                            model=config.GENERATION_MODEL,
+                        ),
                         timeout=config.VERDICT_TIMEOUT_S,
                     )
-                else:
-                    chunks, ret_score = [], 0.0
+                except asyncio.TimeoutError:
+                    log.warning("claim %s timed out", claim.claim_id)
+                    done_claim = claim.model_copy(update={"status": "error", "flags": claim.flags + ["timeout"]})
+                except Exception as exc:
+                    log.error("claim %s error: %s", claim.claim_id, exc)
+                    done_claim = claim.model_copy(update={"status": "error", "flags": claim.flags + ["pipeline_error"]})
 
-                done_claim = await asyncio.wait_for(
-                    evaluate_claim(
-                        claim=claim,
-                        chunks=chunks,
-                        sources_by_id=sources_by_id,
-                        retrieval_score=ret_score,
-                        client=client,
-                        model=config.GENERATION_MODEL,
-                    ),
-                    timeout=config.VERDICT_TIMEOUT_S,
-                )
-            except asyncio.TimeoutError:
-                log.warning("claim %s timed out", claim.claim_id)
-                done_claim = claim.model_copy(update={"status": "error", "flags": claim.flags + ["timeout"]})
-            except Exception as exc:
-                log.error("claim %s error: %s", claim.claim_id, exc)
-                done_claim = claim.model_copy(update={"status": "error", "flags": claim.flags + ["pipeline_error"]})
+                # Stream and persist immediately
+                await store.push_event(audit_id, "claim", done_claim.model_dump())
+                result = store.get_audit(audit_id)
+                if result:
+                    result.claims = [
+                        done_claim if c.claim_id == done_claim.claim_id else c
+                        for c in result.claims
+                    ]
+                    store.set_audit(audit_id, result)
 
-            # Stream and persist immediately
-            await store.push_event(audit_id, "claim", done_claim.model_dump())
-            result = store.get_audit(audit_id)
-            if result:
-                result.claims = [
-                    done_claim if c.claim_id == done_claim.claim_id else c
-                    for c in result.claims
-                ]
-                store.set_audit(audit_id, result)
+                return done_claim
 
-            return done_claim
+        completed_claims: List[Claim] = await asyncio.gather(
+            *[process_claim(c) for c in claims]
+        )
+        # Restore answer-order (gather preserves input order)
+        stage_times.append(TraceStage(name="verdicts", ms=int((time.monotonic() - t0) * 1000)))
 
-    completed_claims: List[Claim] = await asyncio.gather(
-        *[process_claim(c) for c in claims]
-    )
-    # Restore answer-order (gather preserves input order)
-    stage_times.append(TraceStage(name="verdicts", ms=int((time.monotonic() - t0) * 1000)))
+        # ── 4. Validate (already done inside evaluate_claim) ─────────────────
+        stage_times.append(TraceStage(name="validate", ms=0))
 
-    # ── 4. Validate (already done inside evaluate_claim) ─────────────────
-    stage_times.append(TraceStage(name="validate", ms=0))
+        # ── 5. Answer-level checks ────────────────────────────────────────────
+        t0 = time.monotonic()
+        findings = await run_answer_checks(
+            answer_text, completed_claims, client, config.GENERATION_MODEL
+        )
+        stage_times.append(TraceStage(name="answer_checks", ms=int((time.monotonic() - t0) * 1000)))
 
-    # ── 5. Answer-level checks ────────────────────────────────────────────
-    t0 = time.monotonic()
-    findings = await run_answer_checks(
-        answer_text, completed_claims, client, config.GENERATION_MODEL
-    )
-    stage_times.append(TraceStage(name="answer_checks", ms=int((time.monotonic() - t0) * 1000)))
+        if findings:
+            await store.push_event(audit_id, "findings", {"answer_findings": [f.model_dump() for f in findings]})
 
-    if findings:
-        await store.push_event(audit_id, "findings", {"answer_findings": [f.model_dump() for f in findings]})
+        # ── 6. Assemble & finish ──────────────────────────────────────────────
+        _finish(audit_id, completed_claims, findings, stage_times, t_total_start, answer_text, source_ids)
 
-    # ── 6. Assemble & finish ──────────────────────────────────────────────
-    _finish(audit_id, completed_claims, findings, stage_times, t_total_start, answer_text, source_ids)
+    except ClaimExtractionError as exc:
+        log.exception("audit_failed audit_id=%s: %s", audit_id, exc)
+        safe_msg = format_safe_error(exc)
+        await _mark_error(audit_id, safe_msg, code="claim_extraction_failed")
+        return
+    except Exception as exc:
+        log.exception("audit_failed audit_id=%s: %s", audit_id, exc)
+        safe_msg = format_safe_error(exc)
+        await _mark_error(audit_id, safe_msg)
+        return
 
 
 def _finish(
@@ -193,10 +214,11 @@ def _finish(
     log.info("audit %s done in %d ms — %d claims", audit_id, total_ms, len(claims))
 
 
-async def _mark_error(audit_id: str, code: str, message: str) -> None:
+async def _mark_error(audit_id: str, message: str, code: str = "audit_failed") -> None:
     result = store.get_audit(audit_id)
     if result:
         result.status = "error"
+        result.error = message
         store.set_audit(audit_id, result)
     log.error("audit %s error: %s", audit_id, message)
     await store.push_event(audit_id, "error", {"error": {"code": code, "message": message}})

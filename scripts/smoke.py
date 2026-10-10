@@ -39,6 +39,8 @@ claims = sorted(res.get("claims", []), key=lambda c: c["answer_span"]["start"])
 problems = []
 if res.get("status") != "done":
     problems.append(f"status={res.get('status')}")
+    if res.get("error"):
+        problems.append(f"error={res.get('error')}")
 if len(claims) != len(EXPECTED):
     problems.append(f"expected {len(EXPECTED)} claims, got {len(claims)}")
 for i, c in enumerate(claims, 1):

@@ -42,7 +42,8 @@ TXT/pasted text becomes a single page `1`. A PDF with no text layer returns 422 
   "claims": [ Claim ],
   "answer_findings": [ Finding ],
   "summary": Summary | null,
-  "trace": Trace | null
+  "trace": Trace | null,
+  "error": "short, safe error message | null"
 }
 ```
 

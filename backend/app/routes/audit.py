@@ -249,4 +249,5 @@ def _error_result(audit_id: str, answer_text: str, source_ids: list, code: str) 
     result = store.get_audit(audit_id)
     if result:
         result.status = "error"
+        result.error = code
         store.set_audit(audit_id, result)
