@@ -114,9 +114,19 @@
 .audit-empty-answer { min-height:82px; display:flex; align-items:center; gap:11px; margin-top:13px; padding:14px; border:1px dashed var(--border); border-radius:9px; background:var(--surface-secondary); color:var(--text-secondary); }
 .audit-empty-answer svg,.audit-empty-claims svg,.audit-empty-selection svg,.audit-source-placeholder svg,.audit-reasoning-card>svg { flex:none; color:var(--primary-hover); }
 .audit-empty-answer p { margin:0; font-size:11px; }
+.audit-answer-live { margin:13px 0 0; color:var(--foreground); font-size:12px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; }
 .audit-card-note { margin:9px 0 0; padding:8px 10px; background:var(--surface-secondary); color:var(--text-secondary); font-size:9px; }
 .audit-claims-card .audit-card-heading h2 { font-size:12px; }
 .audit-empty-claims { min-height:108px; display:flex; align-items:center; justify-content:center; gap:8px; margin-top:12px; border-top:1px solid var(--border); color:var(--text-secondary); font-size:10px; text-align:center; }
+.audit-claim-list { display:grid; margin-top:12px; border-top:1px solid var(--border); }
+.audit-claim-row { display:grid; grid-template-columns:auto minmax(0,1fr) 14px; align-items:center; gap:10px; width:100%; padding:11px 2px; border:0; border-bottom:1px solid var(--border); background:transparent; color:var(--text-secondary); text-align:left; cursor:pointer; }
+.audit-claim-row:hover,.audit-claim-row.is-selected { background:var(--primary-soft); color:var(--foreground); }
+.audit-claim-row>svg { color:var(--primary-hover); }
+.audit-claim-text { font-size:10px; line-height:1.5; }
+.welcome-answer-input { flex:1; min-width:0; min-height:38px; padding:8px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface-secondary); color:var(--foreground); font-size:11px; transition:border-color .18s ease,background-color .18s ease,box-shadow .18s ease; }
+.welcome-answer-input::placeholder { color:var(--text-secondary); }
+.welcome-answer-input:hover { border-color:var(--primary); background:var(--primary-soft); }
+.welcome-answer-input:focus-visible { outline:2px solid var(--primary); outline-offset:2px; border-color:var(--primary); }
 .audit-finding-card h2 { margin-bottom:14px; }
 .audit-empty-selection { display:inline-flex; align-items:center; gap:6px; padding:6px 9px; border-radius:20px; background:var(--surface-secondary); color:var(--text-secondary); font-size:10px; }
 .audit-selection-hint { margin:12px 0 14px; color:var(--text-secondary); font-size:11px; line-height:1.55; }
@@ -338,17 +348,6 @@
   .brand-mark svg { transition: none; }
   .route-content,.route-card,.workspace-main > .app-shell:not(.route-shell) > .welcome-page { animation: none !important; }
   ::view-transition-group(*),::view-transition-old(*),::view-transition-new(*) { animation-duration: .01ms !important; }
-}
-
-/* Keep the home task focused and its primary action easy to reach on laptop screens. */
-.welcome-page { margin-top: 0; }
-.welcome-page > p { margin-bottom: 12px; }
-.welcome-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 4;
-  padding: 12px 0 max(8px, env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, transparent, rgb(13 14 13 / 96%) 28%);
 }
 
 /* Audit source list sits beside the review workspace, like a focused source drawer. */

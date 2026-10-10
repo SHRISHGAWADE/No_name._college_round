@@ -1,14 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowRight, ShieldCheck, Sparkles, Upload, X } from "lucide-react";
+import { createAudit, uploadPastedSource } from "@/lib/api";
+import { saveAuditSources } from "@/lib/useAudit";
 
 export default function HomePage() {
+  const router = useRouter();
   const [answerInput, setAnswerInput] = useState("");
   const [sourceText, setSourceText] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [sourceDragging, setSourceDragging] = useState(false);
   const [notice, setNotice] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const notify = (message: string) => {
     setNotice(message);
@@ -46,9 +51,32 @@ export default function HomePage() {
     notify("PDF text extraction isn’t connected. Paste source text below.");
   };
 
-  const startAudit = () => {
-    if (!answerInput.trim() || !sourceText.trim()) return;
-    notify("Auditing isn’t connected yet.");
+  const startAudit = async () => {
+    if (isSubmitting) return;
+    if (!answerInput.trim()) {
+      document.getElementById("answer-input")?.focus();
+      return;
+    }
+    if (!sourceText.trim()) {
+      document.getElementById("source-text")?.focus();
+      return;
+    }
+    setIsSubmitting(true);
+    setNotice("");
+
+    try {
+      const sourceLabel = sourceName.toLowerCase().endsWith(".pdf")
+        ? sourceName.replace(/\.pdf$/i, ".txt")
+        : sourceName || "Pasted source.txt";
+      const { sources } = await uploadPastedSource(sourceLabel, sourceText.trim());
+      saveAuditSources(sources);
+      const { audit_id } = await createAudit(answerInput.trim(), sources.map((source) => source.source_id));
+      router.push(`/audit/${encodeURIComponent(audit_id)}`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not start the audit. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return <main className="app-shell" data-page-route="/">
@@ -82,8 +110,25 @@ export default function HomePage() {
         <div className="source-length-feedback" aria-live="polite">{sourceText.length.toLocaleString()} / 200,000 characters</div>
       </div>
       <div className="welcome-actions">
-        <button className="primary-button" disabled={!answerInput.trim() || !sourceText.trim()} onClick={startAudit}>Audit answer <ArrowRight size={16}/></button>
-        <span>{!answerInput.trim() ? "Add an answer to continue." : !sourceText.trim() ? "Add a source to continue." : "Auditing is not connected yet."}</span>
+        <button
+          type="button"
+          className="primary-button"
+          disabled={isSubmitting}
+          aria-busy={isSubmitting}
+          onClick={() => void startAudit()}
+        >
+          {isSubmitting ? "Starting audit…" : "Audit answer"}
+          {!isSubmitting && <ArrowRight size={16} aria-hidden="true"/>}
+        </button>
+        {isSubmitting ? <span aria-live="polite">Uploading your source and starting the review…</span> : <input
+          type="text"
+          className="welcome-answer-input"
+          aria-label="Add an answer"
+          maxLength={15000}
+          value={answerInput}
+          onChange={(event) => setAnswerInput(event.target.value)}
+          placeholder="Add an answer to continue…"
+        />}
       </div>
     </section>
     {notice && <div className="toast" role="status">{notice}</div>}
