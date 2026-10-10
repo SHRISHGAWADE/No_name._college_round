@@ -16,7 +16,7 @@ import pathlib
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ValidationError
 
 from app import config
@@ -25,6 +25,7 @@ from app.pipeline.sources import extract_pages
 from app.rate_limit import limiter
 from app.store import store
 from app.validation.text import normalize_text
+from app.auth import current_user_id
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/sources", tags=["sources"])
@@ -41,6 +42,7 @@ async def upload_sources(
     request: Request,
     files: Optional[List[UploadFile]] = File(None, alias="files[]"),
     files_compat: Optional[List[UploadFile]] = File(None, alias="files"),
+    owner_id: str = Depends(current_user_id),
 ) -> SourcesResponse:
     content_type = request.headers.get("content-type", "")
     request_id: str = getattr(request.state, "request_id", "-")
@@ -67,7 +69,7 @@ async def upload_sources(
                 detail={"error": {"code": "mock_data_missing", "message": "Demo source data is unavailable."}},
             )
         for source in sources:
-            store.set_source(source.source_id, source)
+            store.set_source(source.source_id, source, owner_id)
         return SourcesResponse(sources=sources)
 
     # ── JSON body (pasted text) ────────────────────────────────────────────
@@ -90,7 +92,7 @@ async def upload_sources(
                 detail={"error": {"code": "empty_text", "message": "Source text cannot be empty."}},
             )
         src = _make_text_source(payload.name, text)
-        store.set_source(src.source_id, src)
+        store.set_source(src.source_id, src, owner_id)
         return SourcesResponse(sources=[src])
 
     # ── Multipart files ────────────────────────────────────────────────────
@@ -158,9 +160,10 @@ async def upload_sources(
                 }},
             )
 
-        source_id = f"s_{uuid.uuid4().hex[:8]}"
+        source_id = f"s_{uuid.uuid4().hex}"
         src = Source(source_id=source_id, name=filename, pages=pages)
-        store.set_source(source_id, src)
+        pdf_bytes = content if filename.lower().endswith(".pdf") else None
+        store.set_source(source_id, src, owner_id, pdf_bytes, "application/pdf" if pdf_bytes else "text/plain")
         sources.append(src)
         log.info("source_stored source_id=%s pages=%d request_id=%s", source_id, len(pages), request_id)
 
@@ -168,9 +171,33 @@ async def upload_sources(
 
 
 def _make_text_source(name: str, text: str) -> Source:
-    source_id = f"s_{uuid.uuid4().hex[:8]}"
+    source_id = f"s_{uuid.uuid4().hex}"
     return Source(
         source_id=source_id,
         name=name,
         pages=[Page(page=1, text=text)],
     )
+
+
+@router.get("")
+async def list_sources(owner_id: str = Depends(current_user_id)):
+    return {"sources": store.list_sources(owner_id)}
+
+
+@router.get("/{source_id}")
+async def get_source(source_id: str, owner_id: str = Depends(current_user_id)):
+    source = store.get_source(source_id, owner_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "This source was not found in your library."}})
+    return source
+
+
+@router.get("/{source_id}/file-url")
+async def get_source_file_url(source_id: str, owner_id: str = Depends(current_user_id)):
+    source = store.get_source(source_id, owner_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail={"error": {"code": "not_found", "message": "This source was not found in your library."}})
+    url = store.source_file_url(source_id, owner_id)
+    if url is None:
+        raise HTTPException(status_code=404, detail={"error": {"code": "file_unavailable", "message": "This source has no stored PDF file."}})
+    return {"url": url, "expires_in": 300}

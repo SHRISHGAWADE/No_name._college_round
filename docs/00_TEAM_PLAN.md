@@ -14,7 +14,7 @@ Pitch line: *"Anyone can ask a second AI for an opinion. We show the evidence, a
 4. **"Correct" means consistent with the uploaded sources**, not real-world truth. "Unsupported" is not "false".
 5. **The LLM never gives us trusted character offsets or citations.** It returns text; our code locates spans and verifies quotes verbatim.
 6. **Contract first, mocks first.** Everyone builds in parallel against `01_API_CONTRACT.md` and the files in `mock/`.
-7. No auth, no database, no vector DB, no training, no scraping chat sessions.
+7. Supabase Auth and Postgres/Storage persist account-owned audit history and source documents. Chunk embeddings are cached for repeated audits. No training or scraping chat sessions.
 
 ## Scope
 | Priority | Features |
