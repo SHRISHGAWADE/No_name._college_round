@@ -126,6 +126,7 @@ class AuditResult(BaseModel):
     answer_findings: List[Finding] = Field(default_factory=list)
     summary: Optional[Summary] = None
     trace: Optional[Trace] = None
+    error: Optional[str] = None
 
 
 # ── Request / response shapes ─────────────────────────────────────────────
