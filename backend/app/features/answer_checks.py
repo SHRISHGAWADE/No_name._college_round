@@ -94,7 +94,6 @@ async def _check(
             config={
                 "response_mime_type": "application/json",
                 "response_schema": FindingList,
-                "temperature": 0,
             },
         )
         raw_findings: List[_LLMFinding] = response.parsed.root

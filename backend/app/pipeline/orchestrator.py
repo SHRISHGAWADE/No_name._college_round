@@ -24,7 +24,7 @@ from app.models import (
     AuditResult, Claim, Source, Trace, TraceStage,
     compute_summary,
 )
-from app.pipeline.claims import extract_claims
+from app.pipeline.claims import ClaimExtractionError, extract_claims
 from app.pipeline.retrieval import RetrievalIndex
 from app.pipeline.verdict import evaluate_claim
 from app.features.answer_checks import run_answer_checks
@@ -50,14 +50,20 @@ async def run_audit(audit_id: str, answer_text: str, source_ids: List[str]) -> N
     t0 = time.monotonic()
     try:
         claims = await extract_claims(answer_text, client, config.GENERATION_MODEL)
+    except ClaimExtractionError as exc:
+        log.error("claim extraction crashed: %s", exc)
+        await _mark_error(audit_id, "claim_extraction_failed", "Claim extraction could not be completed.")
+        return
     except Exception as exc:
         log.error("claim extraction crashed: %s", exc)
-        _mark_error(audit_id, str(exc))
+        await _mark_error(audit_id, "claim_extraction_failed", "Claim extraction could not be completed.")
         return
     stage_times.append(TraceStage(name="extract_claims", ms=int((time.monotonic() - t0) * 1000)))
 
     if not claims:
-        log.warning("no claims extracted for audit %s", audit_id)
+        # A valid empty JSON list is distinct from malformed model output.
+        # It is a completed audit with no factual claims, not an error event.
+        log.info("no factual claims extracted for audit %s", audit_id)
         _finish(audit_id, [], [], stage_times, t_total_start, answer_text, source_ids)
         return
 
@@ -187,12 +193,13 @@ def _finish(
     log.info("audit %s done in %d ms — %d claims", audit_id, total_ms, len(claims))
 
 
-def _mark_error(audit_id: str, message: str) -> None:
+async def _mark_error(audit_id: str, code: str, message: str) -> None:
     result = store.get_audit(audit_id)
     if result:
         result.status = "error"
         store.set_audit(audit_id, result)
     log.error("audit %s error: %s", audit_id, message)
+    await store.push_event(audit_id, "error", {"error": {"code": code, "message": message}})
 
 
 # ── Single-claim audit (exported for correction re-audit) ─────────────────

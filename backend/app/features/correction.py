@@ -60,7 +60,9 @@ async def generate_correction(
             genai_client.models.generate_content,
             model=model,
             contents=prompt,
-            config={"temperature": 0},
+            # Gemini 3 does not accept a temperature setting.  Use the model
+            # default rather than passing a deprecated sampling parameter.
+            config={},
         )
         raw = (response.text or "").strip()
         if raw and raw != "CANNOT_FIX":
