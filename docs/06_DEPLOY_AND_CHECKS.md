@@ -133,5 +133,5 @@ Disk-cache all LLM calls; evaluation reruns hit the cache; never loop evals blin
 # v1.1 additions
 - **CI:** `ci/ci.yml` runs backend tests and the frontend build on every PR (P4 sets it up in H1-2).
 - **Single instance:** deploy the backend with one instance (Cloud Run `--max-instances 1`) while audit state is in memory. If you add Redis after CP3, remove that limit.
-- **New env vars:** `MAX_FILE_MB` (10), `RETENTION_MIN` (60), `RATE_LIMIT_DISABLED` (0; set to 1 on demo day).
+- **Runtime env vars:** `MAX_FILE_MB` (10), `RETENTION_MIN` (60), `RATE_LIMIT_DISABLED` (0; set to 1 on demo day), plus `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET=source-pdfs` for account-owned history and private PDFs. See `08_SUPABASE_SETUP.md` for dashboard setup.
 - **CP2 addition:** check that an oversized file and a scanned PDF each show a friendly error, not a crash.

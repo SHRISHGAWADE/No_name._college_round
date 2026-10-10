@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AuditCreateResponse, AuditResult, CorrectionResponse, Source, SourcesResponse } from "./types";
+import { accessToken } from "./supabase";
 
 const spanSchema = z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative() });
 const evidenceSchema = z.object({ source_id: z.string(), source_name: z.string(), page: z.number(), quote: z.string(), start: z.number(), end: z.number(), quote_verified: z.boolean() });
@@ -25,6 +26,9 @@ const createAuditSchema = z.object({ audit_id: z.string() });
 const correctionSchema = z.object({ claim_id: z.string(), original: z.string(), corrected: z.string().nullable(), evidence: z.array(evidenceSchema), recheck: claimSchema.nullable() });
 const errorSchema = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
 const mockAuditSchema = z.object({ answer_text: z.string() });
+const auditListSchema = z.object({ audits: z.array(z.object({ audit_id: z.string(), created_at: z.string(), status: z.enum(["running", "done", "error"]), answer_preview: z.string(), source_names: z.array(z.string()), claim_count: z.number(), summary: summarySchema.nullable() })) });
+const sourceLibrarySchema = z.object({ sources: z.array(z.object({ source_id: z.string(), name: z.string(), mime_type: z.string(), page_count: z.number(), created_at: z.string(), storage_path: z.string().nullable() })) });
+const fileUrlSchema = z.object({ url: z.string().url(), expires_in: z.number() });
 
 export class ApiError extends Error {
   constructor(message: string, readonly status?: number, readonly code?: string, readonly requestId?: string) { super(message); this.name = "ApiError"; }
@@ -45,7 +49,12 @@ async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 150
 
 async function checkedJson<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
   let response: Response;
-  try { response = await fetchWithTimeout(`${apiBaseUrl()}${path}`, init); }
+  try {
+    const headers = new Headers(init?.headers);
+    const token = await accessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    response = await fetchWithTimeout(`${apiBaseUrl()}${path}`, { ...init, headers });
+  }
   catch (error) {
     if (error instanceof ApiError) throw error;
     throw new ApiError(error instanceof Error && error.name === "AbortError" ? "The request timed out. Please try again." : "Could not reach the backend. Check your connection and try again.");
@@ -107,23 +116,66 @@ export async function loadMockExample(): Promise<{ answer: string; sources: Sour
   return { answer: audit.answer_text, sources: sources.sources };
 }
 
-export function streamAudit(auditId: string, onEvent: (event: string, data: unknown) => void, onFailure: () => void): EventSource {
-  const stream = new EventSource(`${apiBaseUrl()}/api/audit/${encodeURIComponent(auditId)}/stream`);
-  const accept = (eventName: string, schema: z.ZodType<unknown>) => (event: MessageEvent<string>) => {
+export async function listAudits() {
+  return checkedJson("/api/audits", auditListSchema);
+}
+
+export async function listSources() {
+  return checkedJson("/api/sources", sourceLibrarySchema);
+}
+
+export async function getSource(sourceId: string): Promise<Source> {
+  return checkedJson(`/api/sources/${encodeURIComponent(sourceId)}`, sourcesSchema.shape.sources.element);
+}
+
+export async function getSourceFileUrl(sourceId: string) {
+  return checkedJson(`/api/sources/${encodeURIComponent(sourceId)}/file-url`, fileUrlSchema);
+}
+
+export type AuditEventStream = { close: () => void };
+export function streamAudit(auditId: string, onEvent: (event: string, data: unknown) => void, onFailure: () => void): AuditEventStream {
+  const controller = new AbortController();
+  let closed = false;
+  void (async () => {
     try {
-      const raw: unknown = JSON.parse(event.data);
-      const parsed = schema.safeParse(raw);
-      if (!parsed.success) { onFailure(); return; }
-      onEvent(eventName, parsed.data);
-    } catch { onFailure(); }
-  };
-  stream.addEventListener("claims", accept("claims", z.object({ claims: z.array(claimSchema) })) as EventListener);
-  stream.addEventListener("claim", accept("claim", claimSchema) as EventListener);
-  stream.addEventListener("findings", accept("findings", z.object({ answer_findings: z.array(findingSchema) })) as EventListener);
-  stream.addEventListener("done", accept("done", z.object({ summary: summarySchema.nullable().optional() })) as EventListener);
-  stream.addEventListener("error", accept("error", z.object({ error: z.object({ code: z.string().optional(), message: z.string().optional() }).optional() }).passthrough()) as EventListener);
-  stream.onerror = onFailure;
-  return stream;
+      const headers = new Headers({ Accept: "text/event-stream" });
+      const token = await accessToken();
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+      const response = await fetch(`${apiBaseUrl()}/api/audit/${encodeURIComponent(auditId)}/stream`, { headers, signal: controller.signal });
+      if (!response.ok || !response.body) throw new Error("Audit stream unavailable");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      const schemas: Record<string, z.ZodType<unknown>> = {
+        claims: z.object({ claims: z.array(claimSchema) }), claim: claimSchema,
+        findings: z.object({ answer_findings: z.array(findingSchema) }),
+        done: z.object({ summary: summarySchema.nullable().optional() }),
+        error: z.object({ error: z.object({ code: z.string().optional(), message: z.string().optional() }).optional() }).passthrough(),
+      };
+      while (!closed) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary >= 0) {
+          const frame = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2);
+          const eventName = frame.split("\n").find((line) => line.startsWith("event:"))?.slice(6).trim() ?? "message";
+          const dataText = frame.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+          const schema = schemas[eventName];
+          if (schema && dataText) {
+            const parsed = schema.safeParse(JSON.parse(dataText));
+            if (!parsed.success) throw new Error("Invalid audit event");
+            onEvent(eventName, parsed.data);
+            if (eventName === "done" || eventName === "error") { closed = true; controller.abort(); break; }
+          }
+          boundary = buffer.indexOf("\n\n");
+        }
+      }
+    } catch {
+      if (!closed) onFailure();
+    }
+  })();
+  return { close: () => { closed = true; controller.abort(); } };
 }
 
 export type { AuditResult, Source };

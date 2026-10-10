@@ -1,12 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auditResultSchema, getAudit, streamAudit } from "./api";
+import { auditResultSchema, getAudit, getSource, streamAudit, type AuditEventStream } from "./api";
 import type { AuditResult, Source } from "./types";
 
 const SOURCE_STORAGE_KEY = "second-opinion-audit-sources";
 export function saveAuditSources(sources: Source[]) {
-  try { sessionStorage.setItem(SOURCE_STORAGE_KEY, JSON.stringify(sources)); window.dispatchEvent(new Event("second-opinion:sources")); } catch { /* Session storage can be disabled. */ }
+  try {
+    const existing = JSON.parse(sessionStorage.getItem(SOURCE_STORAGE_KEY) ?? "[]") as unknown;
+    const previous = Array.isArray(existing) ? existing.filter((item): item is Source => typeof item === "object" && item !== null && "source_id" in item) : [];
+    const merged = new Map(previous.map((source) => [source.source_id, source]));
+    sources.forEach((source) => merged.set(source.source_id, source));
+    sessionStorage.setItem(SOURCE_STORAGE_KEY, JSON.stringify(Array.from(merged.values())));
+    window.dispatchEvent(new Event("second-opinion:sources"));
+  } catch { /* Session storage can be disabled. */ }
 }
 export function getAuditSources(sourceIds: string[]): Source[] {
   try {
@@ -24,15 +31,22 @@ export function useAudit(auditId: string) {
   useEffect(() => {
     let cancelled = false;
     let finished = false;
-    let source: EventSource | null = null;
+    let source: AuditEventStream | null = null;
     let inactivityTimer = 0;
     let pollTimer = 0;
+    let sourcesHydrated = false;
     const finish = () => { finished = true; window.clearTimeout(inactivityTimer); window.clearTimeout(pollTimer); source?.close(); };
     const updateFromServer = async () => {
       try {
         const next = await getAudit(auditId);
         if (cancelled) return null;
         setAudit(next);
+        if (!sourcesHydrated) {
+          sourcesHydrated = true;
+          const cachedIds = new Set(getAuditSources(next.source_ids).map((source) => source.source_id));
+          const missingIds = next.source_ids.filter((sourceId) => !cachedIds.has(sourceId));
+          if (missingIds.length) void Promise.all(missingIds.map((sourceId) => getSource(sourceId).catch(() => null))).then((sources) => saveAuditSources(sources.filter((source): source is Source => source !== null)));
+        }
         if (next.status === "error") setError(next.error || "This audit could not be completed. Please try again.");
         if (next.status === "done" || next.status === "error") finish();
         return next;
