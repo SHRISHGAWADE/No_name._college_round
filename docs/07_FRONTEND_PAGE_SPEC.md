@@ -10,8 +10,8 @@ This file supplements `04_P3_FRONTEND.md`. The API shapes and behavior in `01_AP
 | Audit review | `/audit/[id]` | Required | Show the answer, claim verdicts, verified evidence, findings, and progress. |
 | Audit report | `/report/[id]` | Required | Present a clean, printable summary of a completed audit. |
 | Source viewer | No separate route; drawer or modal from Audit review | Required | Show a cited source page and highlight the exact verified quote. |
-| Recent audits | `/history` | Later, only if audit listing is supported | Let a user reopen recent audits. Do not imply durable history while audit state is in-memory. |
-| Source library | `/sources` | Later, only if source storage/listing is supported | Browse reusable uploaded sources. The current contract has no source-list endpoint. |
+| Recent audits | `/history` | Required | List account-owned audits from the backend and reopen their reports. |
+| Source library | `/sources` | Required | Browse saved source documents and open the original private PDF or extracted text. |
 | Saved reports | `/saved` | Later | Show explicitly saved reports. Do not show a bookmark destination until save behavior exists. |
 | Activity | `/activity` | Later | Show meaningful audit events only if the product has a defined event source. |
 | Settings | `/settings` | Later | Only add settings that the unauthenticated product actually supports. |
@@ -113,7 +113,7 @@ Do not imply a permanent share link or saved report unless backend persistence a
 - Keep the layout usable on laptop and phone widths. On narrow screens, stack the answer and evidence panels; do not shrink the answer into an unreadable column.
 - Give all icon-only controls accessible names and keyboard focus styles.
 - Preserve a clear path back to Home from Audit review and Report.
-- Do not add global search, list/grid switching, bookmark, history, database, or activity controls until their behavior and data source are specified.
+- Do not add bookmark or activity controls until their behavior and data source are specified. History and the source library are backed by Supabase persistence and signed-in account ownership.
 
 ## Shared non-page states
 

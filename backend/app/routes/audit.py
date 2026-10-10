@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from app import config
@@ -21,6 +21,7 @@ from app.models import (
     CorrectionResponse,
 )
 from app.store import store
+from app.auth import current_user_id
 from app.rate_limit import limiter
 from app.validation.text import normalize_text
 
@@ -38,6 +39,24 @@ def _get_correction():
     return generate_correction, audit_single_claim
 
 
+@router.get("s")
+async def list_audits(owner_id: str = Depends(current_user_id)) -> dict:
+    """Return this signed-in user's persisted/recent audit summaries."""
+    rows = store.list_audits(owner_id)
+    audits = []
+    for row in rows:
+        result = row.get("result", {})
+        source_names = [source.name for source in store.get_sources(result.get("source_ids", []), owner_id)]
+        audits.append({
+            "audit_id": row["audit_id"], "created_at": row.get("created_at", result.get("created_at", "")),
+            "status": row.get("status", result.get("status", "error")),
+            "answer_preview": " ".join(result.get("answer_text", "").split())[:180],
+            "source_names": source_names, "claim_count": len(result.get("claims", [])),
+            "summary": result.get("summary"),
+        })
+    return {"audits": audits}
+
+
 # ── Create audit ──────────────────────────────────────────────────────────
 
 @router.post("", response_model=AuditCreateResponse)
@@ -46,6 +65,7 @@ async def create_audit(
     payload: AuditCreateRequest,
     background_tasks: BackgroundTasks,
     request: Request,
+    owner_id: str = Depends(current_user_id),
 ) -> AuditCreateResponse:
     request_id: str = getattr(request.state, "request_id", "-")
     answer = normalize_text(payload.answer)
@@ -65,7 +85,7 @@ async def create_audit(
         )
 
     # Verify source IDs exist
-    missing = [sid for sid in payload.source_ids if store.get_source(sid) is None]
+    missing = [sid for sid in payload.source_ids if store.get_source(sid, owner_id) is None]
     if missing:
         raise HTTPException(
             status_code=422,
@@ -75,7 +95,7 @@ async def create_audit(
             }},
         )
 
-    audit_id = f"a_{uuid.uuid4().hex[:8]}"
+    audit_id = f"a_{uuid.uuid4().hex}"
     initial = AuditResult(
         audit_id=audit_id,
         status="running",
@@ -83,7 +103,7 @@ async def create_audit(
         answer_text=answer,
         source_ids=payload.source_ids,
     )
-    store.set_audit(audit_id, initial)
+    store.set_audit(audit_id, initial, owner_id)
     store.get_or_create_queue(audit_id)  # create queue before background task
 
     if config.MOCK_MODE:
@@ -99,8 +119,8 @@ async def create_audit(
 # ── Poll ──────────────────────────────────────────────────────────────────
 
 @router.get("/{audit_id}", response_model=AuditResult)
-async def get_audit(audit_id: str) -> AuditResult:
-    result = store.get_audit(audit_id)
+async def get_audit(audit_id: str, owner_id: str = Depends(current_user_id)) -> AuditResult:
+    result = store.get_audit(audit_id, owner_id)
     if result is None:
         raise HTTPException(
             status_code=404,
@@ -112,9 +132,9 @@ async def get_audit(audit_id: str) -> AuditResult:
 # ── SSE stream ────────────────────────────────────────────────────────────
 
 @router.get("/{audit_id}/stream")
-async def stream_audit(audit_id: str) -> StreamingResponse:
+async def stream_audit(audit_id: str, owner_id: str = Depends(current_user_id)) -> StreamingResponse:
     # Ensure the audit exists
-    result = store.get_audit(audit_id)
+    result = store.get_audit(audit_id, owner_id)
     if result is None:
         raise HTTPException(
             status_code=404,
@@ -151,8 +171,8 @@ async def stream_audit(audit_id: str) -> StreamingResponse:
 # ── Correction ────────────────────────────────────────────────────────────
 
 @router.post("/{audit_id}/claims/{claim_id}/correct", response_model=CorrectionResponse)
-async def correct_claim(audit_id: str, claim_id: str) -> CorrectionResponse:
-    result = store.get_audit(audit_id)
+async def correct_claim(audit_id: str, claim_id: str, owner_id: str = Depends(current_user_id)) -> CorrectionResponse:
+    result = store.get_audit(audit_id, owner_id)
     if result is None:
         raise HTTPException(
             status_code=404,

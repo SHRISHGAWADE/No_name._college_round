@@ -1,4 +1,4 @@
-# API Contract (v1.1): single source of truth
+# API Contract (v1.2): single source of truth
 
 P1 implements it (Pydantic models in `backend/app/models.py`). P3 mirrors it (TypeScript types + zod in `frontend/src/lib/schema.ts`). Changes need version bump + team announcement.
 
@@ -19,10 +19,20 @@ Ready-made examples: `mock/audit.json` and `mock/sources.json` (the golden refun
 | POST | `/api/sources` | Upload sources. `multipart/form-data` with `files[]` (PDF/TXT), or JSON `{"name": "...", "text": "..."}` for pasted text. Returns `{"sources":[Source]}` |
 | POST | `/api/audit` | Body `{"answer": "...", "source_ids": ["s1"]}`. Returns `{"audit_id": "a_123"}` immediately; work runs in background |
 | GET | `/api/audit/{audit_id}` | Current `AuditResult`. Works while running (partial) and when done. **Polling fallback** |
+| GET | `/api/audits` | Signed-in user's recent audit summaries, newest first |
 | GET | `/api/audit/{audit_id}/stream` | Server-Sent Events (below) |
 | POST | `/api/audit/{audit_id}/claims/{claim_id}/correct` | Evidence-grounded correction + re-audit |
+| GET | `/api/sources` | Signed-in user's saved source library |
+| GET | `/api/sources/{source_id}` | Extracted source pages, ownership checked |
+| GET | `/api/sources/{source_id}/file-url` | Five-minute signed URL for the private original PDF |
 | GET | `/api/mock/sources`, `/api/mock/audit` | Canned JSON from `mock/` |
 | env `MOCK=1` | | The real routes return canned data with artificial delays (for frontend work against a deployed backend) |
+
+## Authentication and persistence
+
+When Supabase is configured on the backend, user-facing endpoints require `Authorization: Bearer <Supabase access token>`. The API validates the token with Supabase Auth and scopes audits, sources, PDF access, and cached embeddings to the authenticated user. The frontend uses Supabase email/password auth. In local mode without Supabase environment variables, the API uses the ephemeral `local-user` store for development.
+
+The backend stores audit results and extracted pages in Postgres, original PDFs in a private Storage bucket, and document chunk embeddings in `source_chunks`. Only the backend service-role key accesses these resources; never expose it to the browser. Run `backend/supabase/migrations/001_history_and_sources.sql` before enabling persistence.
 
 ## Source
 ```json
