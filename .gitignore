@@ -1,0 +1,11 @@
+﻿.codex-backups/
+**/node_modules/
+**/.next/
+**/out/
+**/build/
+**/dist/
+**/coverage/
+**/*.tsbuildinfo
+.env*
+**/.env*
+!**/.env.example
