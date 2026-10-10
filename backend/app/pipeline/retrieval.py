@@ -29,8 +29,15 @@ RETRIEVAL_LOW_THRESHOLD = 0.35
 
 # ── Embedding helper ──────────────────────────────────────────────────────
 
-async def embed_texts(texts: List[str], client, model: str, task_type: str = "RETRIEVAL_DOCUMENT") -> np.ndarray:
-    """Return (N, D) float32 embedding matrix."""
+async def embed_texts(
+    texts: List[str], client, model: str, task_type: str = "RETRIEVAL_DOCUMENT"
+) -> Optional[np.ndarray]:
+    """Return a valid (N, D) embedding matrix, or ``None`` on failure.
+
+    ``None`` is deliberately distinct from a zero vector: an all-zero vector
+    has an arbitrary rank after ``argsort`` and would make a BM25-only result
+    look like a low-scoring dense result.
+    """
     if not texts:
         return np.zeros((0, 1), dtype=np.float32)
 
@@ -42,12 +49,13 @@ async def embed_texts(texts: List[str], client, model: str, task_type: str = "RE
             config={"task_type": task_type},
         )
         vecs = [np.array(e.values, dtype=np.float32) for e in response.embeddings]
-        return np.stack(vecs)
+        matrix = np.stack(vecs)
+        if matrix.ndim != 2 or matrix.shape[0] != len(texts) or matrix.shape[1] == 0:
+            raise ValueError("embedding response has an invalid shape")
+        return matrix
     except Exception as exc:
         log.warning("embed_texts failed (%s): %s", task_type, exc)
-        # Return zeros — retrieval will fall back to BM25 only
-        dim = 768
-        return np.zeros((len(texts), dim), dtype=np.float32)
+        return None
 
 
 def _cosine_sim(query_vec: np.ndarray, doc_matrix: np.ndarray) -> np.ndarray:
@@ -78,7 +86,7 @@ class RetrievalIndex:
     def __init__(
         self,
         sources: List[Source],
-        embeddings: np.ndarray,
+        embeddings: Optional[np.ndarray],
         chunks: List[Dict[str, Any]],
         bm25: BM25Okapi,
     ) -> None:
@@ -108,30 +116,69 @@ class RetrievalIndex:
 
     async def retrieve(
         self, claim_text: str, client, embedding_model: str, top_k: int = 4
-    ) -> Tuple[List[Dict[str, Any]], float]:
-        """Return (top_k chunks, best_retrieval_score)."""
+    ) -> Tuple[List[Dict[str, Any]], Optional[float]]:
+        """Return selected chunks and a score for the retrieval method used.
+
+        A score of ``None`` means neither dense similarity nor BM25 supplied a
+        meaningful relevance score.  This is represented as ``null`` in the
+        existing optional contract field rather than fabricated as zero.
+        """
         if not self.chunks:
             return [], 0.0
 
         # Dense retrieval
         query_emb_matrix = await embed_texts([claim_text], client, embedding_model, task_type="RETRIEVAL_QUERY")
-        if query_emb_matrix.shape[1] == self.embeddings.shape[1]:
+        dense_available = (
+            self.embeddings is not None
+            and query_emb_matrix is not None
+            and query_emb_matrix.shape == (1, self.embeddings.shape[1])
+        )
+        if dense_available:
             dense_scores = _cosine_sim(query_emb_matrix[0], self.embeddings)
+            dense_ranked = list(np.argsort(dense_scores)[::-1])
         else:
-            # A transient embedding failure or model dimension change must not
-            # break BM25 retrieval; dense rankings become neutral.
-            dense_scores = np.zeros(len(self.chunks), dtype=np.float32)
-        dense_ranked = list(np.argsort(dense_scores)[::-1])
+            dense_scores = None
+            dense_ranked = []
 
         # BM25
-        bm25_scores = self.bm25.get_scores(claim_text.lower().split())
-        bm25_ranked = list(np.argsort(bm25_scores)[::-1])
+        query_tokens = set(claim_text.lower().split())
+        bm25_scores = self.bm25.get_scores(list(query_tokens))
+        bm25_max = float(np.max(bm25_scores)) if len(bm25_scores) else 0.0
+        if bm25_max > 0:
+            bm25_ranked = list(np.argsort(bm25_scores)[::-1])
+        else:
+            # BM25's IDF is zero for a one-document corpus.  Preserve a
+            # deterministic lexical fallback for that valid small-source case
+            # instead of relying on all-zero vector tie ordering.
+            lexical_scores = np.array([
+                len(query_tokens.intersection(chunk["text"].lower().split())) / len(query_tokens)
+                if query_tokens else 0.0
+                for chunk in self.chunks
+            ])
+            lexical_max = float(np.max(lexical_scores)) if len(lexical_scores) else 0.0
+            if lexical_max > 0:
+                bm25_scores = lexical_scores
+                bm25_max = lexical_max
+                bm25_ranked = list(np.argsort(lexical_scores)[::-1])
+            else:
+                bm25_ranked = []
 
         # RRF
         fused = _reciprocal_rank_fusion(dense_ranked, bm25_ranked)
         top_indices = [idx for idx, _ in fused[:top_k]]
 
-        best_score = float(dense_scores[top_indices[0]]) if top_indices and len(dense_scores) > 0 else 0.0
+        if not top_indices:
+            return [], None
+
+        if dense_scores is not None:
+            best_score: Optional[float] = float(dense_scores[top_indices[0]])
+        elif bm25_max > 0:
+            # BM25 has no fixed score range.  Report the selected passage's
+            # score relative to this query's best BM25 result, preserving the
+            # existing 0..1 signal convention without calling it cosine.
+            best_score = float(bm25_scores[top_indices[0]] / bm25_max)
+        else:
+            best_score = None
 
         result_chunks = [self.chunks[i] for i in top_indices if i < len(self.chunks)]
         return result_chunks, best_score

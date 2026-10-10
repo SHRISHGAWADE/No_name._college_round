@@ -48,7 +48,7 @@ async def evaluate_claim(
     claim: Claim,
     chunks: List[Dict[str, Any]],
     sources_by_id: Dict[str, Any],  # source_id → Source
-    retrieval_score: float,
+    retrieval_score: Optional[float],
     client,
     model: str,
 ) -> Claim:
@@ -131,16 +131,29 @@ async def evaluate_claim(
                         raw_error_type = None
 
         if match and matched_source:
-            evidence.append(Evidence(
-                source_id=matched_source.source_id,
-                source_name=matched_source.name,
-                page=match.page,
-                quote=quote,
-                start=match.start,
-                end=match.end,
-                quote_verified=True,
-            ))
-            quote_verified_flag = True
+            matched_page = next((page for page in matched_source.pages if page.page == match.page), None)
+            if matched_page is None:
+                # A QuoteMatch must always identify a page from the source it
+                # was verified against.  Do not display evidence if that
+                # invariant is ever broken.
+                flags.append("evidence_unverified")
+                raw_verdict = "unsupported"
+            else:
+                # The verifier permits a small, deterministic normalization
+                # set (for example PDF whitespace and curly punctuation), but
+                # the API contract requires displayed evidence to be the exact
+                # original source text at the returned offsets.
+                quote = matched_page.text[match.start : match.end]
+                evidence.append(Evidence(
+                    source_id=matched_source.source_id,
+                    source_name=matched_source.name,
+                    page=match.page,
+                    quote=quote,
+                    start=match.start,
+                    end=match.end,
+                    quote_verified=True,
+                ))
+                quote_verified_flag = True
         else:
             flags.append("evidence_unverified")
             raw_verdict = "unsupported"  # per contract rule
@@ -151,20 +164,20 @@ async def evaluate_claim(
         raw_verdict = "unsupported"
 
     # Low retrieval flag
-    if retrieval_score < RETRIEVAL_LOW_THRESHOLD:
+    if retrieval_score is not None and retrieval_score < RETRIEVAL_LOW_THRESHOLD:
         flags.append("low_retrieval")
 
     # Confidence
     confidence, confidence_label = compute_confidence(
         quote_verified=quote_verified_flag,
         agreement_ratio=1.0,   # single run; self-consistency optional
-        retrieval_score=retrieval_score,
+        retrieval_score=retrieval_score if retrieval_score is not None else 0.5,
         verdict=raw_verdict,
     )
 
     signals = Signals(
         quote_verified=quote_verified_flag if quote else None,
-        retrieval_score=round(retrieval_score, 4),
+        retrieval_score=round(retrieval_score, 4) if retrieval_score is not None else None,
         agreement=None,
         jev=None,
         hhem=None,
@@ -201,7 +214,6 @@ async def _call_verdict_llm(
                 config={
                     "response_mime_type": "application/json",
                     "response_schema": _VerdictOutput,
-                    "temperature": 0,
                 },
             )
             cached = response.text or "{}"

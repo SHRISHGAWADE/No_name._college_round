@@ -17,7 +17,7 @@ import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app import config
 from app.models import Page, Source, SourcesResponse
@@ -72,8 +72,17 @@ async def upload_sources(
 
     # ── JSON body (pasted text) ────────────────────────────────────────────
     if "application/json" in content_type:
-        body = await request.json()
-        payload = _PastedText(**body)
+        try:
+            body = await request.json()
+            payload = _PastedText(**body)
+        except (json.JSONDecodeError, ValidationError):
+            raise HTTPException(
+                status_code=422,
+                detail={"error": {
+                    "code": "invalid_request",
+                    "message": "Provide JSON with a non-empty text field for the pasted source.",
+                }},
+            )
         text = normalize_text(payload.text)
         if not text.strip():
             raise HTTPException(

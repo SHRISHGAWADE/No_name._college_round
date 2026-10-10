@@ -5,7 +5,9 @@ python-multipart==0.0.9
 pydantic==2.12.5
 
 # ─── Google GenAI (new unified SDK) ───────────────────────────
-google-genai==2.29.0
+# Pinned for the current non-live tested baseline; live Gemini 3.8 compatibility remains to be verified.
+google-genai==1.47.0
+
 
 # ─── PDF extraction ───────────────────────────────────────────
 PyMuPDF==1.24.10

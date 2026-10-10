@@ -5,7 +5,7 @@ import pytest
 
 from app.models import Source, Page, Claim
 from app.pipeline.sources import chunk_source
-from app.pipeline.claims import extract_claims
+from app.pipeline.claims import ClaimExtractionError, extract_claims
 from app.pipeline.retrieval import RetrievalIndex
 from app.validation.spans import locate_span
 
@@ -51,9 +51,8 @@ async def test_malformed_llm_json_does_not_crash_claims():
     mock_client = MagicMock()
     mock_client.models.generate_content.return_value = mock_bad_response
 
-    claims = await extract_claims("Here is an answer about returns.", mock_client, "test-model")
-    assert isinstance(claims, list)
-    assert len(claims) == 0
+    with pytest.raises(ClaimExtractionError):
+        await extract_claims("Here is an answer about returns.", mock_client, "test-model")
 
 
 def test_prompt_injection_safety():

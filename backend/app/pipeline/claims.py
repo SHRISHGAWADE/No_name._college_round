@@ -26,6 +26,10 @@ log = logging.getLogger(__name__)
 MAX_CLAIMS = config.MAX_CLAIMS
 
 
+class ClaimExtractionError(RuntimeError):
+    """The model did not return a usable claim-extraction response."""
+
+
 class _RawClaim(BaseModel):
     text: str
     span_text: str
@@ -56,16 +60,15 @@ async def extract_claims(
                 client.models.generate_content,
                 model=model,
                 contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "temperature": 0,
-                },
+                config={"response_mime_type": "application/json"},
             )
-            cached_json = response.text or "[]"
+            cached_json = (response.text or "").strip()
+            if not cached_json:
+                raise ClaimExtractionError("Claim extraction returned an empty response.")
             cache.set(model, prompt, cached_json)
         except Exception as exc:
             log.error("claim extraction LLM call failed: %s", exc)
-            return []
+            raise ClaimExtractionError("Claim extraction request failed.") from exc
 
     # Parse
     raw_list: List[_RawClaim] = []
@@ -75,7 +78,7 @@ async def extract_claims(
             raw_list = [_RawClaim(**item) for item in parsed[:MAX_CLAIMS]]
     except (json.JSONDecodeError, ValidationError, TypeError) as exc:
         log.error("claim extraction parse error: %s | raw=%r", exc, cached_json[:200])
-        return []
+        raise ClaimExtractionError("Claim extraction returned invalid JSON.") from exc
 
     claims: List[Claim] = []
     for i, raw in enumerate(raw_list, start=1):
