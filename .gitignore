@@ -1,32 +1,11 @@
-# Python
-__pycache__/
-*.py[cod]
-*.so
-.pytest_cache/
-.coverage
-htmlcov/
-.venv/
-venv/
-env/
-*.egg-info/
-backend/.cache/
-.cache/
-
-# Node / Next.js
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-
-# Env / secrets — never commit
-.env
-.env.local
-backend/.env
-frontend/.env.local
-
-# OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
+﻿.codex-backups/
+**/node_modules/
+**/.next/
+**/out/
+**/build/
+**/dist/
+**/coverage/
+**/*.tsbuildinfo
+.env*
+**/.env*
+!**/.env.example
