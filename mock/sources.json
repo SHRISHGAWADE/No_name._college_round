@@ -1,0 +1,18 @@
+{
+  "sources": [
+    {
+      "source_id": "s1",
+      "name": "refund_policy.pdf",
+      "pages": [
+        {
+          "page": 1,
+          "text": "Refund Policy\n\nRefund requests must be submitted within 30 days of purchase. Approved refunds are returned to the original payment method within 5 to 7 business days."
+        },
+        {
+          "page": 2,
+          "text": "Digital products are non-refundable once they have been downloaded. Annual subscriptions may be cancelled at any time, but no partial refund is given for the unused period."
+        }
+      ]
+    }
+  ]
+}

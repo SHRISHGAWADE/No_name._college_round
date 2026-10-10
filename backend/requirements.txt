@@ -1,0 +1,29 @@
+# ─── Core framework ───────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+pydantic==2.12.5
+
+# ─── Google GenAI (new unified SDK) ───────────────────────────
+google-genai==2.29.0
+
+# ─── PDF extraction ───────────────────────────────────────────
+PyMuPDF==1.24.10
+
+# ─── Retrieval ────────────────────────────────────────────────
+rank-bm25==0.2.2
+numpy==1.26.4
+
+# ─── Fuzzy span location only (NOT used for quote verify) ─────
+rapidfuzz==3.9.7
+
+# ─── Rate limiting ────────────────────────────────────────────
+slowapi==0.1.9
+
+# ─── Testing ──────────────────────────────────────────────────
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.28.1
+
+# ─── Utilities ────────────────────────────────────────────────
+python-dotenv==1.0.1
