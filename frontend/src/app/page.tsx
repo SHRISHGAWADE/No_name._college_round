@@ -18,6 +18,7 @@ const demoClaims: Claim[] = [
   { id: 4, verdict: "supported", text: "serves more than 2,400 business customers", explanation: "The customer overview reports 2,460 active business customers.", source: "Corporate Overview.xlsx", page: 8, quote: "Active business customers: 2,460 as of December 2024.", type: "Customer count" },
   { id: 5, verdict: "unsupported", text: "Its gross margin improved to 64% as operating expenses declined by 9%", explanation: "The uploaded sources support a 64% gross margin, but do not substantiate the claimed 9% decline in operating expenses.", source: "Northstar Annual Report 2024.pdf", page: 31, quote: "Gross margin increased to 64% in 2024. Operating expenses totaled $21.6 million.", type: "Financial performance" },
 ];
+const demoSourceText = demoClaims.map((claim) => `${claim.source} · page ${claim.page}\n${claim.quote}`).join("\n\n");
 const folders = [
   { name: "All Sources", count: 842, icon: Database, tone: "neutral" }, { name: "Corporate Overview", count: 128, icon: FileText, tone: "gold" }, { name: "Strategy & Ops", count: 96, icon: FileText, tone: "blue" }, { name: "Research Reports", count: 210, icon: FileText, tone: "orange" }, { name: "Product Docs", count: 156, icon: FileText, tone: "rose" }, { name: "Legal & Compliance", count: 74, icon: FileText, tone: "slate" }, { name: "Finance", count: 88, icon: FileText, tone: "green" }, { name: "Archive", count: 90, icon: Archive, tone: "neutral" },
 ];
@@ -54,7 +55,7 @@ function ContextCard({ title, description, evidence, children }: { title: string
     const top = rect.bottom + height + 12 <= window.innerHeight ? rect.bottom + 8 : Math.max(12, rect.top - height - 8);
     const originX = rect.left + rect.width / 2 - left;
     const originY = rect.top + rect.height / 2 - top;
-    const scale = Math.max(0.18, Math.min(0.5, Math.min(rect.width / width, rect.height / height)));
+    const scale = 0.94;
     window.dispatchEvent(new CustomEvent("context-card-open", { detail: tooltipId }));
     setPosition({ left, top, originX, originY, scale });
     setMounted(true);
@@ -94,8 +95,15 @@ export default function HomePage() {
   const filteredFolders = folders.filter((item) => item.name.toLowerCase().includes(search.toLowerCase()));
 
   const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2400); };
-  const loadDemo = () => { setAnswer(demoAnswer); setAnswerInput(demoAnswer); setSourceText("Northstar Annual Report 2024: Total revenue for the year ended December 31, 2024 was $48.2 million, an increase of 18% year over year. Gross margin increased to 64%. Our current footprint spans 10 markets. Active business customers: 2,460 as of December 2024."); setSourceName("Northstar Annual Report 2024.pdf"); router.push("/audit/northstar-demo"); };
-  const startAudit = () => { if (!answerInput.trim() || !sourceText.trim()) return; notify("Live audits aren’t connected in this frontend demo yet. Use Load demo example to explore the review and report."); };
+  const loadDemo = () => { setAnswerInput(demoAnswer); setSourceText(demoSourceText); setSourceName("Northstar sample source bundle.txt"); };
+  const startAudit = () => {
+    if (!answerInput.trim() || !sourceText.trim()) return;
+    if (answerInput.trim() === demoAnswer && sourceText.trim() === demoSourceText.trim()) {
+      window.dispatchEvent(new CustomEvent("workspace:navigate", { detail: "/audit/northstar-demo" }));
+      return;
+    }
+    notify("Live auditing isn’t connected in this preview. Load the demo example to open its review.");
+  };
   const handleSourceFile = async (file?: File) => {
     if (!file) return;
     const extension = file.name.split(".").pop()?.toLowerCase();
@@ -125,7 +133,7 @@ export default function HomePage() {
     pieces.push(chars.slice(cursor).join("")); return pieces;
   };
   return (
-    <main className="app-shell">
+    <main className="app-shell" data-page-route="/">
 
       <header className="topbar home-topbar">
         <div className="home-brand"><Sparkles size={17}/><span>SECOND OPINION</span><i>/</i><small>NEW AUDIT</small></div>
@@ -141,9 +149,8 @@ export default function HomePage() {
             <label htmlFor="answer-input">AI-generated answer</label>
             <textarea id="answer-input" maxLength={15000} value={answerInput} onChange={(event) => setAnswerInput(event.target.value)} placeholder="Paste the answer you want to check…" />
             <div className="welcome-card-bottom">
-              <span>{answerInput.length.toLocaleString()} / 15,000 characters</span>
-              <button className="text-button" onClick={() => setAnswerInput(demoAnswer)}>Use sample answer</button>
-              <button className="text-button" onClick={loadDemo}><Sparkles size={15} /> Load demo example</button>
+              <span aria-live="polite">{answerInput.length.toLocaleString()} / 15,000 characters</span>
+              <button className="text-button" onPointerEnter={() => router.prefetch("/audit/northstar-demo")} onFocus={() => router.prefetch("/audit/northstar-demo")} onClick={loadDemo}><Sparkles size={15} /> Load demo example</button>
             </div>
           </div>
           <div className="welcome-card source-entry">
@@ -160,11 +167,11 @@ export default function HomePage() {
             {sourceName && <button type="button" className="file-remove" onClick={() => { setSourceName(""); setSourceText(""); }} aria-label="Remove selected source"><X size={13} /> Remove source</button>}
             <label className="paste-source-label" htmlFor="source-text">Or paste source text</label>
             <textarea id="source-text" maxLength={200000} className="source-textarea" value={sourceText} onChange={(event) => setSourceText(event.target.value)} placeholder="Paste relevant source text here…" />
-            <div className="source-length-feedback">{sourceText.length.toLocaleString()} / 200,000 characters</div>
+            <div className="source-length-feedback" aria-live="polite">{sourceText.length.toLocaleString()} / 200,000 characters</div>
           </div>
           <div className="welcome-actions">
             <button className="primary-button" disabled={!answerInput.trim() || !sourceText.trim()} onClick={startAudit}>Audit answer <ArrowRight size={16} /></button>
-            <span>Findings are relative to your sources · Live auditing isn’t connected in this preview</span>
+            <span>{!answerInput.trim() ? "Add an answer to continue." : !sourceText.trim() ? "Add a source to continue." : "Findings are relative to your sources · Live auditing isn’t connected in this preview"}</span>
           </div>
         </section>
       ) : <>

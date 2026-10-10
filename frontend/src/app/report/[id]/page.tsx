@@ -30,7 +30,7 @@ export default function AuditReportPage({ params }: { params: Promise<{ id: stri
   };
   if (auditId !== demoAuditId) return <main className="app-shell route-shell"><section className="route-content route-unavailable"><span className="eyebrow">REPORT NOT FOUND</span><h1>This report isn’t available in this demo.</h1><p>Open the Northstar demo audit to view its report.</p><Link className="primary-button" href={`/audit/${demoAuditId}`}>Open demo audit <MessageSquareText size={15}/></Link></section></main>;
 
-  return <main className="app-shell route-shell report-page-shell">
+  return <main className="app-shell route-shell report-page-shell" data-page-route={`/report/${auditId}`}>
     <header className="topbar route-topbar"><Link href={`/audit/${demoAuditId}`} className="route-back"><ArrowLeft size={16}/> Back to review</Link><div className="route-brand">SECOND OPINION <span>/</span> AUDIT REPORT</div><button className="route-report-link print-report-button" onClick={() => window.print()}><Printer size={14}/> Print or save PDF <ArrowDown size={14}/></button></header>
     <section className="route-content report-content">
       <div className="route-title-row report-title-row"><div><span className="eyebrow"><ShieldCheck size={14}/> SAMPLE AUDIT · COMPLETED</span><h1>Audit report</h1><p>A source-grounded summary of the Northstar example review.</p></div><span className="route-id">ID · {demoAuditId}</span></div>

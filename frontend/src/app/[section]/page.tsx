@@ -16,7 +16,7 @@ export default function SectionPage({ params }: { params: Promise<{ section: str
   const section = rawSection as SectionKey;
   if (!(section in titles)) return <main className="app-shell route-shell"><section className="route-content route-unavailable"><span className="eyebrow">PAGE NOT FOUND</span><h1>This page isn’t available.</h1><Link className="primary-button" href="/">Return home <ArrowRight size={15}/></Link></section></main>;
 
-  return <main className="app-shell route-shell prototype-page-shell">
+  return <main className="app-shell route-shell prototype-page-shell" data-page-route={`/${section}`}>
     <header className="topbar route-topbar"><Link href="/" className="route-back"><ArrowRight className="route-home-arrow" size={15}/> New audit</Link><div className="route-brand">SECOND OPINION <span>/</span> {titles[section].toUpperCase()}</div><PrototypeTag/></header>
     <section className="route-content prototype-content">
       <div className="route-title-row"><div><span className="eyebrow"><Sparkles size={14}/> WORKSPACE</span><h1>{titles[section]}</h1><p>{sectionDescription[section]}</p></div><span className="route-id">PROTOTYPE PAGE</span></div>
