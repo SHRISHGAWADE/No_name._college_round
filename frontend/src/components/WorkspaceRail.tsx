@@ -5,8 +5,7 @@ import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Activity, Bookmark, Clock3, FileText, Home, LogOut, MessageSquareText, Settings, Sparkles } from "lucide-react";
-import { getSupabase } from "@/lib/supabase";
+import { Activity, Bookmark, Clock3, FileText, Home, MessageSquareText, Settings, Sparkles } from "lucide-react";
 
 const navigation = [
   { href: "/", label: "Home", description: "Start a new source-grounded review.", icon: Home },
@@ -203,7 +202,6 @@ export function WorkspaceRail() {
       {navigation.map(({ href, label, description, icon: Icon, divider }) => <RailHint key={href} id={href} label={label} description={description} open={activeHint === href} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href={href} prefetch aria-label={label} aria-describedby={activeHint === href ? `rail-hint-${href}` : undefined} onPointerEnter={() => router.prefetch(href)} onFocus={() => router.prefetch(href)} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, href); }} className={`rail-button ${selectedHref === href ? "active" : ""} ${divider ? "rail-divider" : ""}`}><Icon size={19} strokeWidth={1.8}/></Link></RailHint>)}
     </nav>
     <div className="rail-bottom">
-      {getSupabase() && <button type="button" className="rail-button" aria-label="Sign out" title="Sign out" onClick={() => void getSupabase()?.auth.signOut()}><LogOut size={18}/></button>}
       <RailHint id="/settings" label="Settings" description="Manage the preview settings page." open={activeHint === "/settings"} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href="/settings" prefetch aria-label="Settings" aria-describedby={activeHint === "/settings" ? "rail-hint-/settings" : undefined} onPointerEnter={() => router.prefetch("/settings")} onFocus={() => router.prefetch("/settings")} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, "/settings"); }} className={`rail-button ${pathname === "/settings" ? "active" : ""}`}><Settings size={19}/></Link></RailHint>
       <RailHint id="/account" label="Account" description="View the account and workspace preview." open={activeHint === "/account"} onOpen={setActiveHint} onClose={(id) => setActiveHint((current) => current === id ? null : current)}><Link href="/account" prefetch aria-label="Account" aria-describedby={activeHint === "/account" ? "rail-hint-/account" : undefined} onPointerEnter={() => router.prefetch("/account")} onFocus={() => router.prefetch("/account")} onClick={(event) => { setActiveHint(null); navigateWithFlip(event, "/account"); }} className={`avatar ${pathname === "/account" ? "active" : ""}`}>S<span/></Link></RailHint>
     </div>

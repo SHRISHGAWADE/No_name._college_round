@@ -5,7 +5,6 @@ import Link from "next/link";
 import { Activity, ArrowRight, Bookmark, ChevronRight, Clock3, Database, ExternalLink, FileText, Filter, LoaderCircle, Search, Settings, ShieldCheck, SlidersHorizontal, Sparkles, UserRound } from "lucide-react";
 import { getSource, getSourceFileUrl, listAudits, listSources } from "@/lib/api";
 import type { Source } from "@/lib/types";
-import { getSupabase } from "@/lib/supabase";
 
 type SectionKey = "history" | "sources" | "saved" | "activity" | "settings" | "account";
 const titles: Record<SectionKey, string> = { history: "Recent audits", sources: "Source library", saved: "Saved", activity: "Activity", settings: "Settings", account: "Account" };
@@ -137,28 +136,5 @@ function SettingsPreview() {
 }
 
 function AccountPreview() {
-  const supabase = getSupabase();
-  const [email, setEmail] = useState<string | null>(null);
-  const [name, setName] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!supabase) return;
-    let alive = true;
-    void supabase.auth.getUser().then(({ data }) => {
-      if (!alive) return;
-      const user = data.user;
-      const meta = user?.user_metadata as { full_name?: string; name?: string } | undefined;
-      setEmail(user?.email ?? null);
-      setName(meta?.full_name ?? meta?.name ?? user?.email?.split("@")[0] ?? null);
-    });
-    return () => { alive = false; };
-  }, [supabase]);
-
-  const signedIn = Boolean(email);
-  const signOut = () => {
-    if (!supabase) return;
-    void supabase.auth.signOut().then(() => { setEmail(null); setName(null); });
-  };
-
-  return <div className="prototype-account-layout"><section className="route-card prototype-settings-card account-profile-card"><div className="account-profile-heading"><span className="account-avatar">{email ? email.slice(0, 1).toUpperCase() : "?"}</span><div><span className="eyebrow">PROFILE</span><h2>Account details</h2><p>{email ?? "Profile information"}</p></div></div><div className="account-detail-list"><div className="prototype-setting-row"><div><strong>Display name</strong><p>Name shown in this workspace.</p></div><span className="prototype-setting-value">{name ?? "—"}</span></div><div className="prototype-setting-row"><div><strong>Email address</strong><p>Account email address.</p></div><span className="prototype-setting-value">{email ?? "—"}</span></div><div className="prototype-setting-row"><div><strong>Workspace</strong><p>Current review environment.</p></div><span className="prototype-setting-value">{signedIn ? "Second Opinion" : "—"}</span></div></div></section><section className="route-card prototype-settings-card account-access-card"><div className="prototype-list-toolbar"><div><span className="eyebrow">ACCOUNT STATUS</span><h2>Connection</h2></div><UserRound size={17}/></div><div className="account-status-row"><span className="account-status-dot"/><div><strong>{signedIn ? "Signed in" : "No account connected"}</strong><p>{signedIn ? "Your audits and source files are scoped to this account." : "Account information is not available."}</p></div></div><p className="prototype-footnote"><ShieldCheck size={13}/> {signedIn ? "Your audits and sources are private to this account." : "Account details are unavailable."}</p><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><Link href="/settings" className="route-back account-settings-link"><Settings size={14}/> Open workspace settings</Link>{signedIn && <button type="button" className="route-back account-settings-link" onClick={signOut}>Sign out</button>}</div></section></div>;
+  return <div className="prototype-account-layout"><section className="route-card prototype-settings-card account-profile-card"><div className="account-profile-heading"><span className="account-avatar">G</span><div><span className="eyebrow">DEMO</span><h2>Guest workspace</h2><p>No account or sign-in required.</p></div></div><div className="account-detail-list"><div className="prototype-setting-row"><div><strong>Access</strong><p>This browser has a temporary demo session.</p></div><span className="prototype-setting-value">Guest</span></div><div className="prototype-setting-row"><div><strong>Data storage</strong><p>Audits and extracted source text are temporary.</p></div><span className="prototype-setting-value">In memory</span></div><div className="prototype-setting-row"><div><strong>Workspace</strong><p>Current review environment.</p></div><span className="prototype-setting-value">Second Opinion</span></div></div></section><section className="route-card prototype-settings-card account-access-card"><div className="prototype-list-toolbar"><div><span className="eyebrow">SESSION STATUS</span><h2>Ready to audit</h2></div><UserRound size={17}/></div><div className="account-status-row"><span className="account-status-dot"/><div><strong>Anonymous demo session</strong><p>Records are isolated by browser session and can clear when the backend restarts.</p></div></div><p className="prototype-footnote"><ShieldCheck size={13}/> Original PDF files are not saved in this demo.</p><Link href="/settings" className="route-back account-settings-link"><Settings size={14}/> Open workspace settings</Link></section></div>;
 }
