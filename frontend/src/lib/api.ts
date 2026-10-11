@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AuditCreateResponse, AuditResult, CorrectionResponse, Source, SourcesResponse } from "./types";
-import { accessToken } from "./supabase";
+import { accessToken } from "./demo-session";
 
 const spanSchema = z.object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative() });
 const evidenceSchema = z.object({ source_id: z.string(), source_name: z.string(), page: z.number(), quote: z.string(), start: z.number(), end: z.number(), quote_verified: z.boolean() });

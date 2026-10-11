@@ -113,7 +113,7 @@ Do not imply a permanent share link or saved report unless backend persistence a
 - Keep the layout usable on laptop and phone widths. On narrow screens, stack the answer and evidence panels; do not shrink the answer into an unreadable column.
 - Give all icon-only controls accessible names and keyboard focus styles.
 - Preserve a clear path back to Home from Audit review and Report.
-- Do not add bookmark or activity controls until their behavior and data source are specified. History and the source library are backed by Supabase persistence and signed-in account ownership.
+- Do not add bookmark or activity controls until their behavior and data source are specified. In the current demo, history and the source library are temporary in-memory data scoped to an anonymous browser session.
 
 ## Shared non-page states
 

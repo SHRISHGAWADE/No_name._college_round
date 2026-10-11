@@ -32,15 +32,6 @@ MAX_FILES_PER_REQUEST: int = int(os.environ.get("MAX_FILES_PER_REQUEST", "5"))
 RETENTION_MIN: int = int(os.environ.get("RETENTION_MIN", "60"))
 RATE_LIMIT_DISABLED: bool = os.environ.get("RATE_LIMIT_DISABLED", "0") == "1"
 
-# Supabase persistence/auth. These values are secrets/config and are only read
-# by the backend. Persistence stays disabled for local runs until configured.
-SUPABASE_URL: str = os.environ.get("SUPABASE_URL", "").rstrip("/")
-SUPABASE_ANON_KEY: str = os.environ.get("SUPABASE_ANON_KEY", "")
-SUPABASE_SERVICE_ROLE_KEY: str = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-SUPABASE_STORAGE_BUCKET: str = os.environ.get("SUPABASE_STORAGE_BUCKET", "source-pdfs")
-SUPABASE_CONFIGURED: bool = bool(SUPABASE_URL or SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY)
-SUPABASE_ENABLED: bool = bool(SUPABASE_URL and SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY)
-
 # ── Pipeline constants ─────────────────────────────────────────────────────
 MAX_CLAIMS: int = 30
 RETRIEVAL_TOP_K: int = 4
